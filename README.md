@@ -4,9 +4,9 @@ A full-stack [TestRail](https://www.testrail.com/) clone — test case managemen
 
 ## Screenshots
 
-| Project dashboard | Test case management | Test run execution |
+| Projects | Test case management | Test run execution |
 |---|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Test cases](docs/screenshots/test-cases.png) | ![Test run](docs/screenshots/test-run.png) |
+| ![Projects](docs/screenshots/dashboard.png) | ![Test cases](docs/screenshots/test-cases.png) | ![Test run](docs/screenshots/test-run.png) |
 
 ## Features
 
