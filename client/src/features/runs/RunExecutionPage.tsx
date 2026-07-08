@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { Bug } from 'lucide-react';
+import { Bug, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import * as runsApi from '../../api/runs';
 import type { ResultStatus, TestRun } from '../../api/runs';
 import * as usersApi from '../../api/users';
@@ -24,6 +24,11 @@ const STATUS_BUTTON_CLASSES: Record<ResultStatus, string> = {
   RETEST: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200',
 };
 
+interface AppliedFilter {
+  userIds: Set<string>;
+  showUnassigned: boolean;
+}
+
 function SummaryBar({ summary }: { summary: runsApi.RunSummary }) {
   if (summary.total === 0) return null;
   return (
@@ -33,6 +38,103 @@ function SummaryBar({ summary }: { summary: runsApi.RunSummary }) {
         <StatusLegend counts={summary.counts} />
         <span className="text-xs text-slate-400">Total: {summary.total}</span>
       </div>
+    </div>
+  );
+}
+
+// Mirrors TestRail's real "Filter By User" panel: check specific users (or use the
+// Me/All/None shortcuts), optionally include Unassigned, then click Filter User to apply.
+// Nothing here re-filters live as you click checkboxes — matches TestRail's actual behavior.
+function FilterByUser({
+  directory,
+  currentUserId,
+  appliedFilter,
+  onApply,
+  onClear,
+}: {
+  directory: DirectoryUser[];
+  currentUserId: string | undefined;
+  appliedFilter: AppliedFilter | null;
+  onApply: (filter: AppliedFilter) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [showUnassigned, setShowUnassigned] = useState(false);
+
+  function toggleUser(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="mb-2 rounded-md border border-slate-200 bg-white">
+      <button
+        className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="flex items-center gap-1.5">
+          <Filter className="h-3.5 w-3.5" />
+          Filter by user
+          {appliedFilter && (
+            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">Active</span>
+          )}
+        </span>
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-slate-100 p-3">
+          <div className="mb-2 flex items-center gap-2 text-xs">
+            <span className="text-slate-500">Select:</span>
+            <button className="text-blue-600 hover:underline" onClick={() => setCheckedIds(new Set(currentUserId ? [currentUserId] : []))}>
+              Me
+            </button>
+            <span className="text-slate-300">|</span>
+            <button className="text-blue-600 hover:underline" onClick={() => setCheckedIds(new Set(directory.map((u) => u.id)))}>
+              All
+            </button>
+            <span className="text-slate-300">|</span>
+            <button className="text-blue-600 hover:underline" onClick={() => setCheckedIds(new Set())}>
+              None
+            </button>
+          </div>
+
+          <label className="mb-2 flex items-center gap-1.5 text-xs text-slate-600">
+            <input type="checkbox" checked={showUnassigned} onChange={(e) => setShowUnassigned(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+            Show unassigned
+          </label>
+
+          <div className="mb-3 max-h-40 space-y-1 overflow-y-auto border-t border-slate-100 pt-2">
+            {directory.map((u) => (
+              <label key={u.id} className="flex items-center gap-1.5 text-xs text-slate-600">
+                <input type="checkbox" checked={checkedIds.has(u.id)} onChange={() => toggleUser(u.id)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                {u.id === currentUserId ? `${u.name} (me)` : u.name}
+              </label>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button onClick={() => onApply({ userIds: checkedIds, showUnassigned })}>Filter User</Button>
+            {appliedFilter && (
+              <button
+                className="text-xs text-slate-500 hover:underline"
+                onClick={() => {
+                  setCheckedIds(new Set());
+                  setShowUnassigned(false);
+                  onClear();
+                }}
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -230,6 +332,8 @@ export function RunExecutionPage() {
   const queryClient = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkAssigneeId, setBulkAssigneeId] = useState('');
+  const [appliedFilter, setAppliedFilter] = useState<AppliedFilter | null>(null);
+  const [filterAssigneeId, setFilterAssigneeId] = useState('');
 
   const runQuery = useQuery({ queryKey: ['runs', runId], queryFn: () => runsApi.getRun(runId!), enabled: !!runId });
   const testsQuery = useQuery({ queryKey: ['runs', runId, 'tests'], queryFn: () => runsApi.listTests(runId!), enabled: !!runId });
@@ -260,6 +364,7 @@ export function RunExecutionPage() {
     onSuccess: () => {
       setSelectedIds(new Set());
       setBulkAssigneeId('');
+      setFilterAssigneeId('');
       queryClient.invalidateQueries({ queryKey: ['runs', runId, 'tests'] });
     },
   });
@@ -267,9 +372,14 @@ export function RunExecutionPage() {
   if (!runQuery.data) return <p className="text-sm text-slate-500">Loading…</p>;
   const run = runQuery.data.run;
   const knownDefectIds = defectsQuery.data?.defects.map((d) => d.id) ?? [];
-  const tests = testsQuery.data?.tests ?? [];
-  const unassignedIds = tests.filter((t) => !t.assignedToId).map((t) => t.id);
+  const allTests = testsQuery.data?.tests ?? [];
   const canBulkAssign = canSubmit && !run.isCompleted;
+
+  const visibleTests = appliedFilter
+    ? allTests.filter(
+        (t) => (t.assignedToId && appliedFilter.userIds.has(t.assignedToId)) || (appliedFilter.showUnassigned && !t.assignedToId),
+      )
+    : allTests;
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -281,7 +391,7 @@ export function RunExecutionPage() {
   }
 
   function toggleSelectAll() {
-    setSelectedIds((prev) => (prev.size === tests.length ? new Set() : new Set(tests.map((t) => t.id))));
+    setSelectedIds((prev) => (prev.size === visibleTests.length ? new Set() : new Set(visibleTests.map((t) => t.id))));
   }
 
   return (
@@ -317,19 +427,62 @@ export function RunExecutionPage() {
 
       {summaryQuery.data && <SummaryBar summary={summaryQuery.data} />}
 
-      {canBulkAssign && tests.length > 0 && (
+      {canBulkAssign && allTests.length > 0 && (
+        <FilterByUser
+          directory={directoryQuery.data?.users ?? []}
+          currentUserId={user?.id}
+          appliedFilter={appliedFilter}
+          onApply={(filter) => {
+            setAppliedFilter(filter);
+            setSelectedIds(new Set());
+          }}
+          onClear={() => {
+            setAppliedFilter(null);
+            setSelectedIds(new Set());
+          }}
+        />
+      )}
+
+      {appliedFilter && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+          <span>
+            Showing {visibleTests.length} of {allTests.length} tests matching filter
+          </span>
+          {visibleTests.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <span>Assign all in filter to:</span>
+              <Select value={filterAssigneeId} onChange={(e) => setFilterAssigneeId(e.target.value)} className="w-40 py-1 text-xs">
+                <option value="">Unassigned</option>
+                {(directoryQuery.data?.users ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.id === user?.id ? `${u.name} (me)` : u.name}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                onClick={() => bulkAssign.mutate({ testIds: visibleTests.map((t) => t.id), assignedToId: filterAssigneeId || null })}
+                disabled={bulkAssign.isPending}
+              >
+                Assign all in filter
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {canBulkAssign && visibleTests.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
           <label className="flex items-center gap-1.5 text-xs text-slate-600">
             <input
               type="checkbox"
-              checked={tests.length > 0 && selectedIds.size === tests.length}
+              checked={visibleTests.length > 0 && selectedIds.size === visibleTests.length}
               onChange={toggleSelectAll}
               className="h-4 w-4 rounded border-slate-300"
             />
             Select all
           </label>
 
-          {selectedIds.size > 0 ? (
+          {selectedIds.size > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-500">{selectedIds.size} selected</span>
               <Select value={bulkAssigneeId} onChange={(e) => setBulkAssigneeId(e.target.value)} className="w-40 py-1 text-xs">
@@ -344,28 +497,18 @@ export function RunExecutionPage() {
                 onClick={() => bulkAssign.mutate({ testIds: [...selectedIds], assignedToId: bulkAssigneeId || null })}
                 disabled={bulkAssign.isPending}
               >
-                Apply
+                Assign selected
               </Button>
               <button className="text-xs text-slate-500 hover:underline" onClick={() => setSelectedIds(new Set())}>
                 Clear
               </button>
             </div>
-          ) : (
-            unassignedIds.length > 0 && (
-              <button
-                className="text-xs text-blue-600 hover:underline"
-                onClick={() => bulkAssign.mutate({ testIds: unassignedIds, assignedToId: user!.id })}
-                disabled={bulkAssign.isPending}
-              >
-                Assign all {unassignedIds.length} unassigned to me
-              </button>
-            )
           )}
         </div>
       )}
 
       <div className="rounded-lg border border-slate-200 bg-white">
-        {tests.map((test) => (
+        {visibleTests.map((test) => (
           <TestRow
             key={test.id}
             test={test}
@@ -380,7 +523,9 @@ export function RunExecutionPage() {
             onToggleSelect={() => toggleSelect(test.id)}
           />
         ))}
-        {tests.length === 0 && <p className="p-3 text-sm text-slate-500">No tests in this run.</p>}
+        {visibleTests.length === 0 && (
+          <p className="p-3 text-sm text-slate-500">{appliedFilter ? 'No tests match this filter.' : 'No tests in this run.'}</p>
+        )}
       </div>
     </div>
   );
