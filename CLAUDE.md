@@ -61,14 +61,14 @@ npm run dev                    # starts server (:4000) + client (:5173) together
 Seeded logins (all from `prisma/seed.ts`): `admin@testforge.local` / `ChangeMe123!` (ADMIN), `lead@testforge.local` / `LeadPass123!` (LEAD), `tester@testforge.local` / `TesterPass123!` (TESTER), `viewer@testforge.local` / `ViewerPass123!` (VIEWER). The seed also creates a populated "Online Banking" demo project (2 suites, 5 cases, 1 milestone, 1 plan, 1 run with results).
 
 ```powershell
-npm test                       # server Jest+Supertest suite (32 tests across auth/cases/runs/plans/milestones/csv/webhooks/me/defects)
+npm test                       # server Jest+Supertest suite (36 tests across auth/cases/runs/plans/milestones/csv/webhooks/me/defects)
 ```
 API docs: http://localhost:4000/api/v1/docs (Swagger UI) / http://localhost:4000/api/v1/openapi.json (raw spec).
 
 ## What's built
 - **Auth & users** — login/refresh/logout, RBAC, admin-provisioned users, API keys (backend + admin UI)
 - **Cases** — Project → Suite → Section (nested tree, reparent-on-delete) → TestCase, full CRUD, CSV import/export
-- **Runs** — create (snapshot all-or-selected cases from a suite), execution UI (pass/fail/blocked/retest + comments/defects + per-test assignee picker), result history, close
+- **Runs** — create (snapshot all-or-selected cases from a suite), execution UI (pass/fail/blocked/retest + comments/defects + per-test assignee picker), result history, close/reopen. Assignment also supports **bulk operations**: checkbox-select rows + a bulk action bar ("N selected → assign to X"), plus a one-click "Assign all N unassigned to me" shortcut — both go through a real batched `POST /runs/:id/tests/bulk-assign` endpoint, not N individual requests.
 - **My Tests** (`/my-tests`) — cross-project "assigned to me, in still-open runs" view, TestRail's dashboard to-do equivalent; `GET /users/directory` exposes a minimal (id/name/role) active-user list to any authenticated user so non-admins can populate assignee pickers
 - **Plans & Milestones** — plans group runs, optionally tied to a milestone; milestones support due dates, completion, nesting
 - **Reporting** — project dashboard (stat tiles + per-run stacked status bars, palette validated via the dataviz skill's contrast/CVD checker)

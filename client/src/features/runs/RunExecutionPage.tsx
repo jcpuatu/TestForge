@@ -46,6 +46,8 @@ function TestRow({
   currentUserId,
   currentUserName,
   knownDefectIds,
+  selected,
+  onToggleSelect,
 }: {
   test: runsApi.RunCase;
   run: TestRun;
@@ -55,6 +57,8 @@ function TestRow({
   currentUserId: string | undefined;
   currentUserName: string | undefined;
   knownDefectIds: string[];
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
@@ -88,6 +92,16 @@ function TestRow({
   return (
     <div className="border-b border-slate-200 p-3 last:border-b-0">
       <div className="flex items-center justify-between gap-3">
+        {canAssign && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 shrink-0 rounded border-slate-300"
+            aria-label={`Select ${test.titleSnapshot}`}
+          />
+        )}
         <button className="flex flex-1 items-center gap-2 text-left" onClick={() => setExpanded((v) => !v)}>
           <PriorityBadge priority={test.priority} />
           <span className="text-sm font-medium text-slate-800">{test.titleSnapshot}</span>
@@ -214,6 +228,8 @@ export function RunExecutionPage() {
   const canSubmit = user?.role === 'ADMIN' || user?.role === 'LEAD' || user?.role === 'TESTER';
   const canManage = user?.role === 'ADMIN' || user?.role === 'LEAD';
   const queryClient = useQueryClient();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkAssigneeId, setBulkAssigneeId] = useState('');
 
   const runQuery = useQuery({ queryKey: ['runs', runId], queryFn: () => runsApi.getRun(runId!), enabled: !!runId });
   const testsQuery = useQuery({ queryKey: ['runs', runId, 'tests'], queryFn: () => runsApi.listTests(runId!), enabled: !!runId });
@@ -238,9 +254,35 @@ export function RunExecutionPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', runId] }),
   });
 
+  const bulkAssign = useMutation({
+    mutationFn: (vars: { testIds: string[]; assignedToId: string | null }) =>
+      runsApi.bulkAssignTests(runId!, vars.testIds, vars.assignedToId),
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      setBulkAssigneeId('');
+      queryClient.invalidateQueries({ queryKey: ['runs', runId, 'tests'] });
+    },
+  });
+
   if (!runQuery.data) return <p className="text-sm text-slate-500">Loading…</p>;
   const run = runQuery.data.run;
   const knownDefectIds = defectsQuery.data?.defects.map((d) => d.id) ?? [];
+  const tests = testsQuery.data?.tests ?? [];
+  const unassignedIds = tests.filter((t) => !t.assignedToId).map((t) => t.id);
+  const canBulkAssign = canSubmit && !run.isCompleted;
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => (prev.size === tests.length ? new Set() : new Set(tests.map((t) => t.id))));
+  }
 
   return (
     <div>
@@ -275,8 +317,55 @@ export function RunExecutionPage() {
 
       {summaryQuery.data && <SummaryBar summary={summaryQuery.data} />}
 
+      {canBulkAssign && tests.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={tests.length > 0 && selectedIds.size === tests.length}
+              onChange={toggleSelectAll}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Select all
+          </label>
+
+          {selectedIds.size > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-500">{selectedIds.size} selected</span>
+              <Select value={bulkAssigneeId} onChange={(e) => setBulkAssigneeId(e.target.value)} className="w-40 py-1 text-xs">
+                <option value="">Unassigned</option>
+                {(directoryQuery.data?.users ?? []).map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.id === user?.id ? `${u.name} (me)` : u.name}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                onClick={() => bulkAssign.mutate({ testIds: [...selectedIds], assignedToId: bulkAssigneeId || null })}
+                disabled={bulkAssign.isPending}
+              >
+                Apply
+              </Button>
+              <button className="text-xs text-slate-500 hover:underline" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </button>
+            </div>
+          ) : (
+            unassignedIds.length > 0 && (
+              <button
+                className="text-xs text-blue-600 hover:underline"
+                onClick={() => bulkAssign.mutate({ testIds: unassignedIds, assignedToId: user!.id })}
+                disabled={bulkAssign.isPending}
+              >
+                Assign all {unassignedIds.length} unassigned to me
+              </button>
+            )
+          )}
+        </div>
+      )}
+
       <div className="rounded-lg border border-slate-200 bg-white">
-        {testsQuery.data?.tests.map((test) => (
+        {tests.map((test) => (
           <TestRow
             key={test.id}
             test={test}
@@ -287,9 +376,11 @@ export function RunExecutionPage() {
             currentUserId={user?.id}
             currentUserName={user?.name}
             knownDefectIds={knownDefectIds}
+            selected={selectedIds.has(test.id)}
+            onToggleSelect={() => toggleSelect(test.id)}
           />
         ))}
-        {testsQuery.data?.tests.length === 0 && <p className="p-3 text-sm text-slate-500">No tests in this run.</p>}
+        {tests.length === 0 && <p className="p-3 text-sm text-slate-500">No tests in this run.</p>}
       </div>
     </div>
   );

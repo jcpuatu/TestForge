@@ -26,6 +26,7 @@ export interface RunCase {
   expectedSnapshot: string | null;
   priority: Priority;
   status: ResultStatus;
+  assignedToId: string | null;
   assignedTo: { id: string; name: string } | null;
   latestDefects: string | null;
   latestComment: string | null;
@@ -84,4 +85,11 @@ export function submitResult(testId: string, input: { status: ResultStatus; comm
 
 export function reassignTest(testId: string, assignedToId: string | null) {
   return apiFetch<{ test: RunCase }>(`/tests/${testId}`, { method: 'PATCH', body: { assignedToId } });
+}
+
+export function bulkAssignTests(runId: string, testIds: string[], assignedToId: string | null) {
+  return apiFetch<{ updated: number }>(`/runs/${runId}/tests/bulk-assign`, {
+    method: 'POST',
+    body: { testIds, assignedToId },
+  });
 }

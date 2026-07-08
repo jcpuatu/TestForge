@@ -9,8 +9,10 @@ import { createRun, getRunSummary } from './service';
 import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
+import { bulkAssignSchema } from '../results/schema';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
+const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
 
 // Mounted at /api/v1/projects/:projectId/runs
 export const runsNestedRouter = Router({ mergeParams: true });
@@ -128,6 +130,19 @@ runsRouter.get(
       },
     });
     res.json({ tests: runCases.map(toPublicRunCase) });
+  }),
+);
+
+runsRouter.post(
+  '/:id/tests/bulk-assign',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = bulkAssignSchema.parse(req.body);
+    const result = await prisma.runCase.updateMany({
+      where: { id: { in: body.testIds }, runId: req.params.id },
+      data: { assignedToId: body.assignedToId },
+    });
+    res.json({ updated: result.count });
   }),
 );
 

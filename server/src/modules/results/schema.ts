@@ -10,3 +10,8 @@ export const createResultSchema = z.object({
 export const reassignSchema = z.object({
   assignedToId: z.string().nullable(),
 });
+
+export const bulkAssignSchema = z.object({
+  testIds: z.array(z.string()).min(1).max(500),
+  assignedToId: z.string().nullable(),
+});
