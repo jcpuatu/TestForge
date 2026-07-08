@@ -45,7 +45,7 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-4">
+    <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
       <Field>
         <Label htmlFor="case-title">Title</Label>
         <Input id="case-title" required value={title} onChange={(e) => setTitle(e.target.value)} />

@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { queryClient } from './lib/queryClient';
 import { AuthProvider } from './features/auth/AuthContext';
+import { ThemeProvider } from './features/theme/ThemeContext';
 import { LoginPage } from './features/auth/LoginPage';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { AppShell } from './layouts/AppShell';
@@ -24,6 +25,7 @@ import { DefectsTab } from './features/defects/DefectsTab';
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
           <Routes>
@@ -122,6 +124,7 @@ function App() {
           </Routes>
         </AuthProvider>
       </BrowserRouter>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

@@ -54,9 +54,9 @@ export function MilestonesTab() {
 
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Milestones</h1>
+      <h1 className="mb-4 text-xl font-semibold text-slate-900 dark:text-slate-100">Milestones</h1>
       {canManage && (
-        <form onSubmit={handleSubmit} className="mb-6 flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">
+        <form onSubmit={handleSubmit} className="mb-6 flex items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <div className="flex-1">
             <Field>
               <Label htmlFor="milestone-name">Name</Label>
@@ -74,31 +74,31 @@ export function MilestonesTab() {
           </Button>
         </form>
       )}
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="space-y-2">
         {milestonesQuery.data?.milestones.map((m) => (
-          <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4">
+          <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
             <div>
-              <h3 className={`font-medium ${m.isCompleted ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{m.name}</h3>
-              {m.dueDate && <p className="text-xs text-slate-500">Due {new Date(m.dueDate).toLocaleDateString()}</p>}
+              <h3 className={`font-medium ${m.isCompleted ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-900 dark:text-slate-100'}`}>{m.name}</h3>
+              {m.dueDate && <p className="text-xs text-slate-500 dark:text-slate-400">Due {new Date(m.dueDate).toLocaleDateString()}</p>}
             </div>
             {canManage && (
               <div className="flex gap-2">
                 <button
-                  className="text-xs text-blue-600 hover:underline"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                   onClick={() => toggleComplete.mutate({ id: m.id, isCompleted: !m.isCompleted })}
                 >
                   {m.isCompleted ? 'Reopen' : 'Mark complete'}
                 </button>
-                <button className="text-xs text-red-600 hover:underline" onClick={() => deleteMilestone.mutate(m.id)}>
+                <button className="text-xs text-red-600 dark:text-red-400 hover:underline" onClick={() => deleteMilestone.mutate(m.id)}>
                   Delete
                 </button>
               </div>
             )}
           </div>
         ))}
-        {milestonesQuery.data?.milestones.length === 0 && <p className="text-sm text-slate-500">No milestones yet.</p>}
+        {milestonesQuery.data?.milestones.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No milestones yet.</p>}
       </div>
     </div>
   );

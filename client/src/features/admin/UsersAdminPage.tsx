@@ -44,13 +44,13 @@ export function UsersAdminPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-900">Users</h1>
-      <p className="mb-4 text-sm text-slate-500">
+      <h1 className="mb-6 text-2xl font-semibold text-slate-900 dark:text-slate-100">Users</h1>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
         TestForge is admin-provisioned — there is no public self-registration, matching real TestRail's model.
       </p>
 
-      <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Create user</h2>
+      <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Create user</h2>
         <div className="grid grid-cols-2 gap-3">
           <Field>
             <Label htmlFor="user-name">Name</Label>
@@ -75,20 +75,20 @@ export function UsersAdminPage() {
             </Select>
           </Field>
         </div>
-        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+        {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
         <Button type="submit" disabled={createUser.isPending}>
           Create user
         </Button>
       </form>
 
-      <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+      <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         {usersQuery.data?.users.map((u) => (
           <div key={u.id} className="flex items-center justify-between p-3">
             <div>
-              <p className="text-sm font-medium text-slate-800">
-                {u.name} <span className="font-normal text-slate-400">· {u.email}</span>
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                {u.name} <span className="font-normal text-slate-400 dark:text-slate-500">· {u.email}</span>
               </p>
-              {!u.isActive && <Badge className="mt-1 bg-slate-200 text-slate-500">Inactive</Badge>}
+              {!u.isActive && <Badge className="mt-1 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">Inactive</Badge>}
             </div>
             <div className="flex items-center gap-2">
               <Select
@@ -103,7 +103,7 @@ export function UsersAdminPage() {
                 ))}
               </Select>
               <button
-                className="text-xs text-red-600 hover:underline"
+                className="text-xs text-red-600 dark:text-red-400 hover:underline"
                 onClick={() => updateUser.mutate({ id: u.id, isActive: !u.isActive })}
               >
                 {u.isActive ? 'Deactivate' : 'Reactivate'}

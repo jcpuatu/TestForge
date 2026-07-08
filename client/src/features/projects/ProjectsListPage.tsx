@@ -35,11 +35,11 @@ export function ProjectsListPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-900">Projects</h1>
+      <h1 className="mb-6 text-2xl font-semibold text-slate-900 dark:text-slate-100">Projects</h1>
 
       {canCreate && (
-        <form onSubmit={handleSubmit} className="mb-8 rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">New project</h2>
+        <form onSubmit={handleSubmit} className="mb-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">New project</h2>
           <Field>
             <Label htmlFor="project-name">Name</Label>
             <Input id="project-name" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -53,29 +53,29 @@ export function ProjectsListPage() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </Field>
-          {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+          {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" disabled={createProject.isPending}>
             {createProject.isPending ? 'Creating…' : 'Create project'}
           </Button>
         </form>
       )}
 
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {data?.projects.map((project) => (
           <Link
             key={project.id}
             to={`/projects/${project.id}`}
-            className="rounded-lg border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm"
+            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 transition-shadow hover:shadow-sm"
           >
-            <h3 className="font-medium text-slate-900">{project.name}</h3>
-            {project.description && <p className="mt-1 text-sm text-slate-500 line-clamp-2">{project.description}</p>}
-            <p className="mt-3 text-xs text-slate-400">{project._count?.suites ?? 0} suites</p>
+            <h3 className="font-medium text-slate-900 dark:text-slate-100">{project.name}</h3>
+            {project.description && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 line-clamp-2">{project.description}</p>}
+            <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">{project._count?.suites ?? 0} suites</p>
           </Link>
         ))}
         {data && data.projects.length === 0 && (
-          <p className="text-sm text-slate-500">No projects yet. Create one to get started.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">No projects yet. Create one to get started.</p>
         )}
       </div>
     </div>

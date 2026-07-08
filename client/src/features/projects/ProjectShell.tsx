@@ -27,7 +27,7 @@ export function ProjectShell() {
     enabled: !!projectId,
   });
 
-  if (isLoading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (isLoading) return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
   if (!data) return null;
 
   const tabs = canManage ? [...TABS, ...ADMIN_TABS] : TABS;
@@ -37,9 +37,9 @@ export function ProjectShell() {
       <aside className="w-56 shrink-0">
         <Link
           to="/projects"
-          className="mb-2 flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm font-semibold text-slate-800 hover:border-slate-300"
+          className="mb-2 flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-500"
         >
-          <ChevronLeft className="h-4 w-4 shrink-0 text-slate-400" />
+          <ChevronLeft className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
           <span className="truncate">{data.project.name}</span>
         </Link>
 
@@ -51,7 +51,7 @@ export function ProjectShell() {
               className={({ isActive }) =>
                 clsx(
                   'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm',
-                  isActive ? 'bg-blue-50 font-medium text-blue-700' : 'text-slate-600 hover:bg-slate-100',
+                  isActive ? 'bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700',
                 )
               }
             >

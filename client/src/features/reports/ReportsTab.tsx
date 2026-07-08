@@ -8,9 +8,9 @@ type Context = { project: Project };
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{value}</p>
     </div>
   );
 }
@@ -24,14 +24,14 @@ export function ReportsTab() {
     enabled: !!projectId,
   });
 
-  if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!data) return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
 
   const passRateLabel = data.passRate === null ? '—' : `${Math.round(data.passRate * 100)}%`;
 
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900">{project.name}</h1>
-      {project.description && <p className="mb-5 text-sm text-slate-500">{project.description}</p>}
+      <h1 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{project.name}</h1>
+      {project.description && <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">{project.description}</p>}
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile label="Test suites" value={String(data.counts.suites)} />
@@ -42,7 +42,7 @@ export function ReportsTab() {
       </div>
 
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">Recent test runs</h2>
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Recent test runs</h2>
         <StatusLegend counts={data.totals} />
       </div>
 
@@ -51,16 +51,16 @@ export function ReportsTab() {
           <Link
             key={run.id}
             to={`/runs/${run.id}`}
-            className="block rounded-lg border border-slate-200 bg-white p-4 hover:shadow-sm"
+            className="block rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 hover:shadow-sm"
           >
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-800">{run.name}</span>
-              <span className="text-xs text-slate-400">{run.suiteName}</span>
+              <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{run.name}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">{run.suiteName}</span>
             </div>
             <StackedStatusBar counts={run.counts} total={run.total} />
           </Link>
         ))}
-        {data.recentRuns.length === 0 && <p className="text-sm text-slate-500">No test runs yet.</p>}
+        {data.recentRuns.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No test runs yet.</p>}
       </div>
     </div>
   );

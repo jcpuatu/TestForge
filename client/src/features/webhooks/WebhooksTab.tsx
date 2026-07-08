@@ -34,37 +34,37 @@ function WebhookRow({ webhook }: { webhook: webhooksApi.Webhook }) {
   });
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-mono text-sm text-slate-800">{webhook.url}</p>
+          <p className="font-mono text-sm text-slate-800 dark:text-slate-200">{webhook.url}</p>
           <Badge className="mt-1">{webhook.event}</Badge>
         </div>
         <div className="flex gap-3 text-xs">
-          <button className="text-blue-600 hover:underline" onClick={() => testMutation.mutate()} disabled={testMutation.isPending}>
+          <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => testMutation.mutate()} disabled={testMutation.isPending}>
             Send test ping
           </button>
-          <button className="text-blue-600 hover:underline" onClick={() => setShowLog((v) => !v)}>
+          <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setShowLog((v) => !v)}>
             {showLog ? 'Hide log' : 'View log'}
           </button>
-          <button className="text-red-600 hover:underline" onClick={() => deleteMutation.mutate()}>
+          <button className="text-red-600 dark:text-red-400 hover:underline" onClick={() => deleteMutation.mutate()}>
             Delete
           </button>
         </div>
       </div>
 
       {showLog && (
-        <div className="mt-3 space-y-1 border-t border-slate-100 pt-3">
+        <div className="mt-3 space-y-1 border-t border-slate-100 dark:border-slate-800 pt-3">
           {deliveriesQuery.data?.deliveries.map((d) => (
             <div key={d.id} className="flex items-center gap-2 text-xs">
-              <Badge className={d.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
+              <Badge className={d.success ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'}>
                 {d.success ? 'OK' : 'FAILED'}
               </Badge>
-              <span className="text-slate-500">{d.statusCode ?? '—'}</span>
-              <span className="text-slate-400">{new Date(d.createdAt).toLocaleString()}</span>
+              <span className="text-slate-500 dark:text-slate-400">{d.statusCode ?? '—'}</span>
+              <span className="text-slate-400 dark:text-slate-500">{new Date(d.createdAt).toLocaleString()}</span>
             </div>
           ))}
-          {deliveriesQuery.data?.deliveries.length === 0 && <p className="text-xs text-slate-400">No deliveries yet.</p>}
+          {deliveriesQuery.data?.deliveries.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">No deliveries yet.</p>}
         </div>
       )}
     </div>
@@ -103,13 +103,13 @@ export function WebhooksTab() {
 
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Webhooks</h1>
-      <p className="mb-4 text-sm text-slate-500">
+      <h1 className="mb-4 text-xl font-semibold text-slate-900 dark:text-slate-100">Webhooks</h1>
+      <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
         Outbound webhooks POST a signed JSON payload (HMAC-SHA256 in the <code>X-TestForge-Signature</code> header) to an external URL
         when project events occur — a stand-in integration point for Slack/Jira/CI notifications.
       </p>
 
-      <form onSubmit={handleSubmit} className="mb-6 flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-4">
+      <form onSubmit={handleSubmit} className="mb-6 flex items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
         <div className="flex-1">
           <Field>
             <Label htmlFor="webhook-url">Target URL</Label>
@@ -132,9 +132,9 @@ export function WebhooksTab() {
           Add webhook
         </Button>
       </form>
-      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
       {createdSecret && (
-        <p className="mb-4 rounded-md bg-amber-50 p-3 text-xs text-amber-800">
+        <p className="mb-4 rounded-md bg-amber-50 dark:bg-amber-900/30 p-3 text-xs text-amber-800 dark:text-amber-300">
           Signing secret (shown once): <code className="font-mono">{createdSecret}</code>
         </p>
       )}
@@ -143,7 +143,7 @@ export function WebhooksTab() {
         {webhooksQuery.data?.webhooks.map((webhook) => (
           <WebhookRow key={webhook.id} webhook={webhook} />
         ))}
-        {webhooksQuery.data?.webhooks.length === 0 && <p className="text-sm text-slate-500">No webhooks configured yet.</p>}
+        {webhooksQuery.data?.webhooks.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No webhooks configured yet.</p>}
       </div>
     </div>
   );

@@ -8,20 +8,20 @@ export function MyTestsPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900">My Tests</h1>
-      <p className="mb-6 text-sm text-slate-500">Tests assigned to you in active (not yet closed) test runs, across all projects.</p>
+      <h1 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">My Tests</h1>
+      <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Tests assigned to you in active (not yet closed) test runs, across all projects.</p>
 
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
 
-      <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+      <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         {data?.tests.map((test) => (
-          <Link key={test.id} to={`/runs/${test.run.id}`} className="flex items-center justify-between p-3 hover:bg-slate-50">
+          <Link key={test.id} to={`/runs/${test.run.id}`} className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-800">
             <div>
               <div className="flex items-center gap-2">
                 <PriorityBadge priority={test.priority} />
-                <span className="text-sm font-medium text-slate-800">{test.titleSnapshot}</span>
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{test.titleSnapshot}</span>
               </div>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                 {test.run.project.name} · {test.run.name}
               </p>
             </div>
@@ -29,7 +29,7 @@ export function MyTestsPage() {
           </Link>
         ))}
         {data && data.tests.length === 0 && (
-          <p className="p-4 text-sm text-slate-500">Nothing assigned to you right now — nice and clear.</p>
+          <p className="p-4 text-sm text-slate-500 dark:text-slate-400">Nothing assigned to you right now — nice and clear.</p>
         )}
       </div>
     </div>

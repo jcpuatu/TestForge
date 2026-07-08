@@ -49,12 +49,12 @@ export function PlansListTab() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Test Plans</h1>
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Test Plans</h1>
         {canManage && <Button onClick={() => setShowForm((v) => !v)}>+ New plan</Button>}
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
+        <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <Field>
             <Label htmlFor="plan-name">Plan name</Label>
             <Input id="plan-name" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -70,7 +70,7 @@ export function PlansListTab() {
               ))}
             </Select>
           </Field>
-          {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+          {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" disabled={createPlan.isPending}>
             Create plan
           </Button>
@@ -82,17 +82,17 @@ export function PlansListTab() {
           <Link
             key={plan.id}
             to={`/plans/${plan.id}`}
-            className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 hover:shadow-sm"
+            className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 hover:shadow-sm"
           >
             <div>
-              <h3 className="font-medium text-slate-900">{plan.name}</h3>
-              <p className="mt-1 text-xs text-slate-500">
+              <h3 className="font-medium text-slate-900 dark:text-slate-100">{plan.name}</h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 {plan.milestone?.name ?? 'No milestone'} · {plan._count?.runs ?? 0} runs
               </p>
             </div>
           </Link>
         ))}
-        {plansQuery.data?.plans.length === 0 && <p className="text-sm text-slate-500">No test plans yet.</p>}
+        {plansQuery.data?.plans.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No test plans yet.</p>}
       </div>
     </div>
   );

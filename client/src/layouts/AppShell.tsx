@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckSquare, KeyRound, Users } from 'lucide-react';
+import { CheckSquare, KeyRound, Moon, Sun, Users } from 'lucide-react';
 import { useAuth } from '../features/auth/AuthContext';
+import { useTheme } from '../features/theme/ThemeContext';
 import { Logo } from '../components/Logo';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'ADMIN';
 
@@ -15,7 +17,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <header className="flex items-center gap-6 bg-[#1F2D35] px-4 py-2.5 text-white">
         <Link to="/projects" className="flex items-center">
           <Logo inverted iconClassName="h-7 w-7" className="text-[17px]" />
@@ -37,6 +39,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3 text-sm">
+          <button
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="rounded border border-slate-600 p-1.5 text-slate-200 hover:bg-slate-700"
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
           <span className="text-slate-300">
             {user?.name} <span className="text-slate-500">· {user?.role}</span>
           </span>

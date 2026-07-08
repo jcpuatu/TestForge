@@ -44,16 +44,16 @@ export function PlanDetailPage() {
     addRun.mutate();
   }
 
-  if (!planQuery.data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!planQuery.data) return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
   const plan = planQuery.data.plan;
 
   return (
     <div>
-      <Link to={`/projects/${plan.projectId}/plans`} className="mb-4 inline-block text-sm text-blue-600 hover:underline">
+      <Link to={`/projects/${plan.projectId}/plans`} className="mb-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
         ← Back to plans
       </Link>
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900">{plan.name}</h1>
-      {plan.milestone && <p className="mb-6 text-sm text-slate-500">Milestone: {plan.milestone.name}</p>}
+      <h1 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{plan.name}</h1>
+      {plan.milestone && <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Milestone: {plan.milestone.name}</p>}
 
       {canManage && (
         <div className="mb-4">
@@ -62,7 +62,7 @@ export function PlanDetailPage() {
       )}
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 bg-white p-4">
+        <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <Field>
             <Label htmlFor="plan-run-name">Run name</Label>
             <Input id="plan-run-name" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -80,7 +80,7 @@ export function PlanDetailPage() {
               ))}
             </Select>
           </Field>
-          {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+          {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" disabled={addRun.isPending}>
             {addRun.isPending ? 'Creating…' : 'Create run'}
           </Button>
@@ -92,18 +92,18 @@ export function PlanDetailPage() {
           <Link
             key={run.id}
             to={`/runs/${run.id}`}
-            className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-4 hover:shadow-sm"
+            className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 hover:shadow-sm"
           >
             <div>
-              <h3 className="font-medium text-slate-900">{run.name}</h3>
-              <p className="mt-1 text-xs text-slate-500">{run.suite?.name}</p>
+              <h3 className="font-medium text-slate-900 dark:text-slate-100">{run.name}</h3>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{run.suite?.name}</p>
             </div>
-            <Badge className={run.isCompleted ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-700'}>
+            <Badge className={run.isCompleted ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400' : 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'}>
               {run.isCompleted ? 'Closed' : 'Active'}
             </Badge>
           </Link>
         ))}
-        {plan.runs.length === 0 && <p className="text-sm text-slate-500">No runs in this plan yet.</p>}
+        {plan.runs.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No runs in this plan yet.</p>}
       </div>
     </div>
   );

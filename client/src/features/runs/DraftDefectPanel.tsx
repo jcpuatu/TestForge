@@ -62,17 +62,17 @@ export function DraftDefectPanel({
   }
 
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+    <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-blue-800">Draft defect for Jira</h4>
-        <button className="text-xs text-slate-500 hover:text-slate-700" onClick={onClose}>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-300">Draft defect for Jira</h4>
+        <button className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300" onClick={onClose}>
           Close
         </button>
       </div>
-      <p className="mb-1 text-xs font-medium text-slate-600">Title</p>
-      <p className="mb-2 rounded bg-white p-2 text-xs text-slate-800">{title}</p>
-      <p className="mb-1 text-xs font-medium text-slate-600">Description</p>
-      <pre className="mb-3 whitespace-pre-wrap rounded bg-white p-2 font-sans text-xs text-slate-800">{description}</pre>
+      <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">Title</p>
+      <p className="mb-2 rounded bg-white dark:bg-slate-800 p-2 text-xs text-slate-800 dark:text-slate-200">{title}</p>
+      <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-400">Description</p>
+      <pre className="mb-3 whitespace-pre-wrap rounded bg-white dark:bg-slate-800 p-2 font-sans text-xs text-slate-800 dark:text-slate-200">{description}</pre>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" onClick={handleCopy}>
@@ -86,7 +86,7 @@ export function DraftDefectPanel({
       </div>
 
       <details className="mt-3">
-        <summary className="cursor-pointer text-xs text-slate-500">
+        <summary className="cursor-pointer text-xs text-slate-500 dark:text-slate-400">
           {jiraUrl ? 'Change' : 'Set'} your Jira "Create Issue" URL (saved locally in this browser)
         </summary>
         <div className="mt-2">
@@ -99,7 +99,7 @@ export function DraftDefectPanel({
               onChange={(e) => handleSaveJiraUrl(e.target.value)}
             />
           </Field>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             Works reliably on Jira Server/Data Center. Newer Jira Cloud UIs may not honor the pre-fill — copy/paste
             still works either way.
           </p>

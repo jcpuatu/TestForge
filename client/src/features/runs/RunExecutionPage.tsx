@@ -17,11 +17,11 @@ import { DraftDefectPanel } from './DraftDefectPanel';
 
 const STATUS_OPTIONS: ResultStatus[] = ['PASSED', 'FAILED', 'BLOCKED', 'RETEST'];
 const STATUS_BUTTON_CLASSES: Record<ResultStatus, string> = {
-  UNTESTED: 'bg-slate-100 text-slate-600 hover:bg-slate-200',
-  PASSED: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200',
-  FAILED: 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200',
-  BLOCKED: 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200',
-  RETEST: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100 border border-cyan-200',
+  UNTESTED: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600',
+  PASSED: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/60 border border-emerald-200 dark:border-emerald-800',
+  FAILED: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-800/60 border border-red-200 dark:border-red-800',
+  BLOCKED: 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-800/60 border border-orange-200 dark:border-orange-800',
+  RETEST: 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-800/60 border border-cyan-200 dark:border-cyan-800',
 };
 
 interface AppliedFilter {
@@ -36,7 +36,7 @@ function SummaryBar({ summary }: { summary: runsApi.RunSummary }) {
       <StackedStatusBar counts={summary.counts} total={summary.total} height={10} />
       <div className="mt-1.5 flex items-center gap-4">
         <StatusLegend counts={summary.counts} />
-        <span className="text-xs text-slate-400">Total: {summary.total}</span>
+        <span className="text-xs text-slate-400 dark:text-slate-500">Total: {summary.total}</span>
       </div>
     </div>
   );
@@ -72,47 +72,47 @@ function FilterByUser({
   }
 
   return (
-    <div className="mb-2 rounded-md border border-slate-200 bg-white">
+    <div className="mb-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
       <button
-        className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700"
+        className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300"
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-1.5">
           <Filter className="h-3.5 w-3.5" />
           Filter by user
           {appliedFilter && (
-            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">Active</span>
+            <span className="rounded bg-blue-100 dark:bg-blue-900/50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-400">Active</span>
           )}
         </span>
         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </button>
 
       {open && (
-        <div className="border-t border-slate-100 p-3">
+        <div className="border-t border-slate-100 dark:border-slate-800 p-3">
           <div className="mb-2 flex items-center gap-2 text-xs">
-            <span className="text-slate-500">Select:</span>
-            <button className="text-blue-600 hover:underline" onClick={() => setCheckedIds(new Set(currentUserId ? [currentUserId] : []))}>
+            <span className="text-slate-500 dark:text-slate-400">Select:</span>
+            <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setCheckedIds(new Set(currentUserId ? [currentUserId] : []))}>
               Me
             </button>
-            <span className="text-slate-300">|</span>
-            <button className="text-blue-600 hover:underline" onClick={() => setCheckedIds(new Set(directory.map((u) => u.id)))}>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setCheckedIds(new Set(directory.map((u) => u.id)))}>
               All
             </button>
-            <span className="text-slate-300">|</span>
-            <button className="text-blue-600 hover:underline" onClick={() => setCheckedIds(new Set())}>
+            <span className="text-slate-300 dark:text-slate-600">|</span>
+            <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setCheckedIds(new Set())}>
               None
             </button>
           </div>
 
-          <label className="mb-2 flex items-center gap-1.5 text-xs text-slate-600">
-            <input type="checkbox" checked={showUnassigned} onChange={(e) => setShowUnassigned(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+          <label className="mb-2 flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+            <input type="checkbox" checked={showUnassigned} onChange={(e) => setShowUnassigned(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 dark:border-slate-600" />
             Show unassigned
           </label>
 
-          <div className="mb-3 max-h-40 space-y-1 overflow-y-auto border-t border-slate-100 pt-2">
+          <div className="mb-3 max-h-40 space-y-1 overflow-y-auto border-t border-slate-100 dark:border-slate-800 pt-2">
             {directory.map((u) => (
-              <label key={u.id} className="flex items-center gap-1.5 text-xs text-slate-600">
-                <input type="checkbox" checked={checkedIds.has(u.id)} onChange={() => toggleUser(u.id)} className="h-3.5 w-3.5 rounded border-slate-300" />
+              <label key={u.id} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                <input type="checkbox" checked={checkedIds.has(u.id)} onChange={() => toggleUser(u.id)} className="h-3.5 w-3.5 rounded border-slate-300 dark:border-slate-600" />
                 {u.id === currentUserId ? `${u.name} (me)` : u.name}
               </label>
             ))}
@@ -122,7 +122,7 @@ function FilterByUser({
             <Button onClick={() => onApply({ userIds: checkedIds, showUnassigned })}>Filter User</Button>
             {appliedFilter && (
               <button
-                className="text-xs text-slate-500 hover:underline"
+                className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
                 onClick={() => {
                   setCheckedIds(new Set());
                   setShowUnassigned(false);
@@ -192,7 +192,7 @@ function TestRow({
   const hasOpenDefect = (test.status === 'FAILED' || test.status === 'BLOCKED') && !!test.latestDefects;
 
   return (
-    <div className="border-b border-slate-200 p-3 last:border-b-0">
+    <div className="border-b border-slate-200 dark:border-slate-700 p-3 last:border-b-0">
       <div className="flex items-center justify-between gap-3">
         {canAssign && (
           <input
@@ -200,14 +200,14 @@ function TestRow({
             checked={selected}
             onChange={onToggleSelect}
             onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 shrink-0 rounded border-slate-300"
+            className="h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600"
             aria-label={`Select ${test.titleSnapshot}`}
           />
         )}
         <button className="flex flex-1 items-center gap-2 text-left" onClick={() => setExpanded((v) => !v)}>
           <PriorityBadge priority={test.priority} />
-          <span className="text-sm font-medium text-slate-800">{test.titleSnapshot}</span>
-          {hasOpenDefect && <Bug className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label="Has linked defect" />}
+          <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{test.titleSnapshot}</span>
+          {hasOpenDefect && <Bug className="h-3.5 w-3.5 shrink-0 text-red-500 dark:text-red-400" aria-label="Has linked defect" />}
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {canAssign ? (
@@ -224,7 +224,7 @@ function TestRow({
               ))}
             </Select>
           ) : (
-            <span className="text-xs text-slate-400">{test.assignedTo?.name ?? 'Unassigned'}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500">{test.assignedTo?.name ?? 'Unassigned'}</span>
           )}
           <StatusBadge status={test.status} />
         </div>
@@ -233,18 +233,18 @@ function TestRow({
       {expanded && (
         <div className="mt-3 space-y-3">
           {test.stepsSnapshot && test.stepsSnapshot.length > 0 && (
-            <ol className="ml-5 list-decimal text-sm text-slate-600">
+            <ol className="ml-5 list-decimal text-sm text-slate-600 dark:text-slate-400">
               {test.stepsSnapshot.map((step, i) => (
                 <li key={i}>
                   {step.step}
-                  {step.expected && <span className="text-slate-400"> → {step.expected}</span>}
+                  {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
                 </li>
               ))}
             </ol>
           )}
 
           {canSubmit && (
-            <div className="rounded-md bg-slate-50 p-3">
+            <div className="rounded-md bg-slate-50 dark:bg-slate-700 p-3">
               <Field>
                 <Label htmlFor={`comment-${test.id}`}>Comment</Label>
                 <Textarea id={`comment-${test.id}`} rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -278,7 +278,7 @@ function TestRow({
                 <button
                   type="button"
                   onClick={() => setShowDraft((v) => !v)}
-                  className="ml-auto flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                  className="ml-auto flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   <Bug className="h-3.5 w-3.5" />
                   Draft defect for Jira
@@ -300,16 +300,16 @@ function TestRow({
 
           {resultsQuery.data && resultsQuery.data.results.length > 0 && (
             <div>
-              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">History</h4>
+              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">History</h4>
               <div className="space-y-1.5">
                 {resultsQuery.data.results.map((r) => (
-                  <div key={r.id} className="flex items-start gap-2 text-xs text-slate-600">
+                  <div key={r.id} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400">
                     <StatusBadge status={r.status} />
                     <div>
                       <p>
                         {r.comment} {r.defects && <DefectText value={r.defects} />}
                       </p>
-                      <p className="text-slate-400">
+                      <p className="text-slate-400 dark:text-slate-500">
                         {r.enteredBy?.name} · {new Date(r.createdAt).toLocaleString()}
                       </p>
                     </div>
@@ -369,7 +369,7 @@ export function RunExecutionPage() {
     },
   });
 
-  if (!runQuery.data) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!runQuery.data) return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
   const run = runQuery.data.run;
   const knownDefectIds = defectsQuery.data?.defects.map((d) => d.id) ?? [];
   const allTests = testsQuery.data?.tests ?? [];
@@ -396,17 +396,17 @@ export function RunExecutionPage() {
 
   return (
     <div>
-      <Link to={`/projects/${run.projectId}/runs`} className="mb-4 inline-block text-sm text-blue-600 hover:underline">
+      <Link to={`/projects/${run.projectId}/runs`} className="mb-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
         ← Back to runs
       </Link>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{run.name}</h1>
-          <p className="text-sm text-slate-500">{run.suite?.name}</p>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{run.name}</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{run.suite?.name}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
             onClick={() => defectsApi.downloadDefectsCsv(run.id, run.name)}
           >
             Export defects CSV
@@ -421,7 +421,7 @@ export function RunExecutionPage() {
               Reopen run
             </Button>
           )}
-          {!canManage && run.isCompleted && <span className="text-sm text-slate-500">Closed</span>}
+          {!canManage && run.isCompleted && <span className="text-sm text-slate-500 dark:text-slate-400">Closed</span>}
         </div>
       </div>
 
@@ -444,7 +444,7 @@ export function RunExecutionPage() {
       )}
 
       {appliedFilter && (
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
           <span>
             Showing {visibleTests.length} of {allTests.length} tests matching filter
           </span>
@@ -471,20 +471,20 @@ export function RunExecutionPage() {
       )}
 
       {canBulkAssign && visibleTests.length > 0 && (
-        <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-          <label className="flex items-center gap-1.5 text-xs text-slate-600">
+        <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 px-3 py-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
             <input
               type="checkbox"
               checked={visibleTests.length > 0 && selectedIds.size === visibleTests.length}
               onChange={toggleSelectAll}
-              className="h-4 w-4 rounded border-slate-300"
+              className="h-4 w-4 rounded border-slate-300 dark:border-slate-600"
             />
             Select all
           </label>
 
           {selectedIds.size > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-slate-500">{selectedIds.size} selected</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{selectedIds.size} selected</span>
               <Select value={bulkAssigneeId} onChange={(e) => setBulkAssigneeId(e.target.value)} className="w-40 py-1 text-xs">
                 <option value="">Unassigned</option>
                 {(directoryQuery.data?.users ?? []).map((u) => (
@@ -499,7 +499,7 @@ export function RunExecutionPage() {
               >
                 Assign selected
               </Button>
-              <button className="text-xs text-slate-500 hover:underline" onClick={() => setSelectedIds(new Set())}>
+              <button className="text-xs text-slate-500 dark:text-slate-400 hover:underline" onClick={() => setSelectedIds(new Set())}>
                 Clear
               </button>
             </div>
@@ -507,7 +507,7 @@ export function RunExecutionPage() {
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         {visibleTests.map((test) => (
           <TestRow
             key={test.id}
@@ -524,7 +524,7 @@ export function RunExecutionPage() {
           />
         ))}
         {visibleTests.length === 0 && (
-          <p className="p-3 text-sm text-slate-500">{appliedFilter ? 'No tests match this filter.' : 'No tests in this run.'}</p>
+          <p className="p-3 text-sm text-slate-500 dark:text-slate-400">{appliedFilter ? 'No tests match this filter.' : 'No tests in this run.'}</p>
         )}
       </div>
     </div>

@@ -35,10 +35,10 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 shadow-sm">
         <Logo className="mb-1" iconClassName="h-7 w-7" />
-        <p className="mb-6 text-sm text-slate-500">Sign in to manage test cases and runs.</p>
+        <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Sign in to manage test cases and runs.</p>
         <form onSubmit={handleSubmit}>
           <Field>
             <Label htmlFor="email">Email</Label>
@@ -54,7 +54,7 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </Field>
-          {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+          {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>
