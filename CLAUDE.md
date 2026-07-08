@@ -61,7 +61,7 @@ npm run dev                    # starts server (:4000) + client (:5173) together
 Seeded logins (all from `prisma/seed.ts`): `admin@testforge.local` / `ChangeMe123!` (ADMIN), `lead@testforge.local` / `LeadPass123!` (LEAD), `tester@testforge.local` / `TesterPass123!` (TESTER), `viewer@testforge.local` / `ViewerPass123!` (VIEWER). The seed also creates a populated "Online Banking" demo project (2 suites, 5 cases, 1 milestone, 1 plan, 1 run with results).
 
 ```powershell
-npm test                       # server Jest+Supertest suite (26 tests across auth/cases/runs/plans/milestones/csv/webhooks/me)
+npm test                       # server Jest+Supertest suite (32 tests across auth/cases/runs/plans/milestones/csv/webhooks/me/defects)
 ```
 API docs: http://localhost:4000/api/v1/docs (Swagger UI) / http://localhost:4000/api/v1/openapi.json (raw spec).
 
@@ -74,6 +74,7 @@ API docs: http://localhost:4000/api/v1/docs (Swagger UI) / http://localhost:4000
 - **Reporting** — project dashboard (stat tiles + per-run stacked status bars, palette validated via the dataviz skill's contrast/CVD checker)
 - **REST API** — versioned `/api/v1`, documented via OpenAPI/Swagger UI, dual auth (JWT or API key)
 - **Webhooks** — outbound HMAC-signed POST on `RUN_CREATED`/`RUN_COMPLETED`/`CASE_CREATED`, delivery log, test-ping button
+- **Defect linking (Jira stand-in, not a real integration)** — `Result.defects` is free text (comma-separated IDs/URLs), rendered as a clickable link when it looks like a URL (`client/src/components/DefectText.tsx`); a red bug icon appears on a test row when its latest result is Failed/Blocked with a defect attached; the Defect IDs input autocompletes from defect IDs already used elsewhere in the project. A **Defects tab** (`GET /projects/:id/defects`) rolls up every defect ID across the project — reference count, how many cases are still failing vs. look resolved, last-seen date. A **"Draft defect for Jira"** panel on each test auto-generates a title/description (steps, expected/actual, environment, reporter, deep link back to TestForge) with a copy-to-clipboard button, plus an optional locally-saved Jira "create issue" URL for one-click prefill (real Jira feature, no API key needed, best-effort on newer Jira Cloud UIs). A run's **"Export defects CSV"** button bulk-exports every Failed/Blocked test as a Jira-bulk-import-shaped CSV (Summary/Description/Issue Type/Priority/Labels) — reuses the same `lib/csv.ts` encoder as case import/export. None of this talks to a real Jira instance — a genuine push-to-Jira integration (create + live status sync) would need real Jira credentials to build and test against, which isn't available; this is the deliberate middle ground that needed none.
 
 ## Roadmap — natural next increments (not started)
 - **Attachments** on cases/results (screenshots) — flagged repeatedly during design as a likely reviewer expectation

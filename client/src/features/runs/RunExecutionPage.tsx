@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
+import { Bug } from 'lucide-react';
 import * as runsApi from '../../api/runs';
-import type { ResultStatus } from '../../api/runs';
+import type { ResultStatus, TestRun } from '../../api/runs';
 import * as usersApi from '../../api/users';
 import type { DirectoryUser } from '../../api/users';
+import * as defectsApi from '../../api/defects';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
 import { PriorityBadge, StatusBadge } from '../../components/Badge';
+import { DefectText } from '../../components/DefectText';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { StackedStatusBar, StatusLegend } from '../../components/StackedStatusBar';
+import { DraftDefectPanel } from './DraftDefectPanel';
 
 const STATUS_OPTIONS: ResultStatus[] = ['PASSED', 'FAILED', 'BLOCKED', 'RETEST'];
 const STATUS_BUTTON_CLASSES: Record<ResultStatus, string> = {
@@ -35,21 +39,28 @@ function SummaryBar({ summary }: { summary: runsApi.RunSummary }) {
 
 function TestRow({
   test,
+  run,
   canSubmit,
   canAssign,
   directory,
   currentUserId,
+  currentUserName,
+  knownDefectIds,
 }: {
   test: runsApi.RunCase;
+  run: TestRun;
   canSubmit: boolean;
   canAssign: boolean;
   directory: DirectoryUser[];
   currentUserId: string | undefined;
+  currentUserName: string | undefined;
+  knownDefectIds: string[];
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
   const [defects, setDefects] = useState('');
+  const [showDraft, setShowDraft] = useState(false);
 
   const resultsQuery = useQuery({
     queryKey: ['tests', test.id, 'results'],
@@ -72,12 +83,15 @@ function TestRow({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', test.runId, 'tests'] }),
   });
 
+  const hasOpenDefect = (test.status === 'FAILED' || test.status === 'BLOCKED') && !!test.latestDefects;
+
   return (
     <div className="border-b border-slate-200 p-3 last:border-b-0">
       <div className="flex items-center justify-between gap-3">
         <button className="flex flex-1 items-center gap-2 text-left" onClick={() => setExpanded((v) => !v)}>
           <PriorityBadge priority={test.priority} />
           <span className="text-sm font-medium text-slate-800">{test.titleSnapshot}</span>
+          {hasOpenDefect && <Bug className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label="Has linked defect" />}
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {canAssign ? (
@@ -123,12 +137,18 @@ function TestRow({
                 <Label htmlFor={`defects-${test.id}`}>Defect IDs (optional)</Label>
                 <Input
                   id={`defects-${test.id}`}
+                  list={`defect-suggestions-${test.id}`}
                   placeholder="BUG-123"
                   value={defects}
                   onChange={(e) => setDefects(e.target.value)}
                 />
+                <datalist id={`defect-suggestions-${test.id}`}>
+                  {knownDefectIds.map((id) => (
+                    <option key={id} value={id} />
+                  ))}
+                </datalist>
               </Field>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {STATUS_OPTIONS.map((status) => (
                   <button
                     key={status}
@@ -139,7 +159,26 @@ function TestRow({
                     {status}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setShowDraft((v) => !v)}
+                  className="ml-auto flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                >
+                  <Bug className="h-3.5 w-3.5" />
+                  Draft defect for Jira
+                </button>
               </div>
+              {showDraft && (
+                <div className="mt-3">
+                  <DraftDefectPanel
+                    test={test}
+                    run={run}
+                    draftComment={comment || test.latestComment || undefined}
+                    reporterName={currentUserName}
+                    onClose={() => setShowDraft(false)}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -152,7 +191,7 @@ function TestRow({
                     <StatusBadge status={r.status} />
                     <div>
                       <p>
-                        {r.comment} {r.defects && <span className="font-medium text-red-600">[{r.defects}]</span>}
+                        {r.comment} {r.defects && <DefectText value={r.defects} />}
                       </p>
                       <p className="text-slate-400">
                         {r.enteredBy?.name} · {new Date(r.createdAt).toLocaleString()}
@@ -184,14 +223,24 @@ export function RunExecutionPage() {
     enabled: !!runId,
   });
   const directoryQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
+  const defectsQuery = useQuery({
+    queryKey: ['projects', runQuery.data?.run.projectId, 'defects'],
+    queryFn: () => defectsApi.listProjectDefects(runQuery.data!.run.projectId),
+    enabled: !!runQuery.data,
+  });
 
   const closeRun = useMutation({
     mutationFn: () => runsApi.closeRun(runId!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', runId] }),
   });
+  const reopenRun = useMutation({
+    mutationFn: () => runsApi.reopenRun(runId!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', runId] }),
+  });
 
   if (!runQuery.data) return <p className="text-sm text-slate-500">Loading…</p>;
   const run = runQuery.data.run;
+  const knownDefectIds = defectsQuery.data?.defects.map((d) => d.id) ?? [];
 
   return (
     <div>
@@ -203,12 +252,25 @@ export function RunExecutionPage() {
           <h1 className="text-2xl font-semibold text-slate-900">{run.name}</h1>
           <p className="text-sm text-slate-500">{run.suite?.name}</p>
         </div>
-        {canManage && !run.isCompleted && (
-          <Button variant="secondary" onClick={() => closeRun.mutate()} disabled={closeRun.isPending}>
-            Close run
-          </Button>
-        )}
-        {run.isCompleted && <span className="text-sm text-slate-500">Closed</span>}
+        <div className="flex items-center gap-2">
+          <button
+            className="text-sm text-blue-600 hover:underline"
+            onClick={() => defectsApi.downloadDefectsCsv(run.id, run.name)}
+          >
+            Export defects CSV
+          </button>
+          {canManage && !run.isCompleted && (
+            <Button variant="secondary" onClick={() => closeRun.mutate()} disabled={closeRun.isPending}>
+              Close run
+            </Button>
+          )}
+          {canManage && run.isCompleted && (
+            <Button variant="secondary" onClick={() => reopenRun.mutate()} disabled={reopenRun.isPending}>
+              Reopen run
+            </Button>
+          )}
+          {!canManage && run.isCompleted && <span className="text-sm text-slate-500">Closed</span>}
+        </div>
       </div>
 
       {summaryQuery.data && <SummaryBar summary={summaryQuery.data} />}
@@ -218,10 +280,13 @@ export function RunExecutionPage() {
           <TestRow
             key={test.id}
             test={test}
+            run={run}
             canSubmit={canSubmit && !run.isCompleted}
             canAssign={canSubmit && !run.isCompleted}
             directory={directoryQuery.data?.users ?? []}
             currentUserId={user?.id}
+            currentUserName={user?.name}
+            knownDefectIds={knownDefectIds}
           />
         ))}
         {testsQuery.data?.tests.length === 0 && <p className="p-3 text-sm text-slate-500">No tests in this run.</p>}

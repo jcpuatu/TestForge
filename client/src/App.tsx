@@ -19,6 +19,7 @@ import { WebhooksTab } from './features/webhooks/WebhooksTab';
 import { UsersAdminPage } from './features/admin/UsersAdminPage';
 import { ApiKeysPage } from './features/admin/ApiKeysPage';
 import { MyTestsPage } from './features/me/MyTestsPage';
+import { DefectsTab } from './features/defects/DefectsTab';
 
 function App() {
   return (
@@ -53,6 +54,7 @@ function App() {
               <Route path="runs" element={<RunsListPage />} />
               <Route path="plans" element={<PlansListTab />} />
               <Route path="milestones" element={<MilestonesTab />} />
+              <Route path="defects" element={<DefectsTab />} />
               <Route path="webhooks" element={<WebhooksTab />} />
             </Route>
             <Route

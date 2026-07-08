@@ -27,6 +27,8 @@ export interface RunCase {
   priority: Priority;
   status: ResultStatus;
   assignedTo: { id: string; name: string } | null;
+  latestDefects: string | null;
+  latestComment: string | null;
 }
 
 export interface RunSummary {
@@ -58,6 +60,10 @@ export function getRun(id: string) {
 
 export function closeRun(id: string) {
   return apiFetch<{ run: TestRun }>(`/runs/${id}/close`, { method: 'POST' });
+}
+
+export function reopenRun(id: string) {
+  return apiFetch<{ run: TestRun }>(`/runs/${id}/reopen`, { method: 'POST' });
 }
 
 export function listTests(runId: string) {

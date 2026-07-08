@@ -15,7 +15,7 @@ import { runsRouter, runsNestedRouter, runsByPlanRouter } from './modules/runs/r
 import { testsRouter } from './modules/results/routes';
 import { milestonesRouter, milestonesNestedRouter } from './modules/milestones/routes';
 import { plansRouter, plansNestedRouter } from './modules/plans/routes';
-import { dashboardRouter } from './modules/reports/routes';
+import { dashboardRouter, defectsRouter } from './modules/reports/routes';
 import { webhooksRouter, webhooksNestedRouter } from './modules/webhooks/routes';
 import { meRouter } from './modules/me/routes';
 
@@ -41,6 +41,7 @@ app.use('/api/v1/projects/:projectId/runs', runsNestedRouter);
 app.use('/api/v1/projects/:projectId/milestones', milestonesNestedRouter);
 app.use('/api/v1/projects/:projectId/plans', plansNestedRouter);
 app.use('/api/v1/projects/:projectId/dashboard', dashboardRouter);
+app.use('/api/v1/projects/:projectId/defects', defectsRouter);
 app.use('/api/v1/projects/:projectId/webhooks', webhooksNestedRouter);
 app.use('/api/v1/projects', projectsRouter);
 app.use('/api/v1/suites/:suiteId/sections', sectionsNestedRouter);

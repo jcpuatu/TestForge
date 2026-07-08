@@ -8,6 +8,7 @@ import { createRunSchema, updateRunSchema } from './schema';
 import { createRun, getRunSummary } from './service';
 import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
+import { defectsToJiraCsv } from './defectsCsv';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 
@@ -94,6 +95,18 @@ runsRouter.post(
   }),
 );
 
+runsRouter.post(
+  '/:id/reopen',
+  requireRole(...MANAGE_ROLES),
+  asyncHandler(async (req, res) => {
+    const run = await prisma.testRun.update({
+      where: { id: req.params.id },
+      data: { isCompleted: false, completedAt: null },
+    });
+    res.json({ run });
+  }),
+);
+
 runsRouter.delete(
   '/:id',
   requireRole(...MANAGE_ROLES),
@@ -109,7 +122,10 @@ runsRouter.get(
     const runCases = await prisma.runCase.findMany({
       where: { runId: req.params.id },
       orderBy: { orderIndex: 'asc' },
-      include: { assignedTo: { select: { id: true, name: true } } },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        results: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
     });
     res.json({ tests: runCases.map(toPublicRunCase) });
   }),
@@ -120,5 +136,22 @@ runsRouter.get(
   asyncHandler(async (req, res) => {
     const summary = await getRunSummary(req.params.id);
     res.json(summary);
+  }),
+);
+
+runsRouter.get(
+  '/:id/defects/export',
+  asyncHandler(async (req, res) => {
+    const run = await prisma.testRun.findUnique({ where: { id: req.params.id }, include: { suite: true } });
+    if (!run) throw new NotFoundError('Run');
+    const runCases = await prisma.runCase.findMany({
+      where: { runId: run.id },
+      orderBy: { orderIndex: 'asc' },
+      include: { results: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    const csv = defectsToJiraCsv(runCases, run.name, run.suite?.name);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${run.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-defects.csv"`);
+    res.send(csv);
   }),
 );

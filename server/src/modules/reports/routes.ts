@@ -69,3 +69,61 @@ dashboardRouter.get(
     });
   }),
 );
+
+// Mounted at /api/v1/projects/:projectId/defects
+export const defectsRouter = Router({ mergeParams: true });
+defectsRouter.use(requireAuth);
+
+defectsRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const projectId = req.params.projectId;
+
+    const runCases = await prisma.runCase.findMany({
+      where: { run: { projectId } },
+      include: {
+        results: { orderBy: { createdAt: 'desc' }, take: 1 },
+        run: { select: { id: true, name: true } },
+      },
+    });
+
+    interface DefectEntry {
+      id: string;
+      count: number;
+      openCount: number;
+      resolvedCount: number;
+      lastSeenAt: string;
+      cases: { caseTitle: string; runId: string; runName: string; status: string }[];
+    }
+    const byDefect = new Map<string, DefectEntry>();
+
+    for (const rc of runCases) {
+      const latest = rc.results[0];
+      if (!latest?.defects) continue;
+      const ids = latest.defects
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      for (const id of ids) {
+        const entry = byDefect.get(id) ?? {
+          id,
+          count: 0,
+          openCount: 0,
+          resolvedCount: 0,
+          lastSeenAt: latest.createdAt.toISOString(),
+          cases: [],
+        };
+        entry.count += 1;
+        if (rc.status === 'FAILED' || rc.status === 'BLOCKED') entry.openCount += 1;
+        if (rc.status === 'PASSED') entry.resolvedCount += 1;
+        if (latest.createdAt.toISOString() > entry.lastSeenAt) entry.lastSeenAt = latest.createdAt.toISOString();
+        entry.cases.push({ caseTitle: rc.titleSnapshot, runId: rc.run.id, runName: rc.run.name, status: rc.status });
+        byDefect.set(id, entry);
+      }
+    }
+
+    const defects = [...byDefect.values()].sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
+    res.json({ defects });
+  }),
+);
