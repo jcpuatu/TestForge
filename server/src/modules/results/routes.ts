@@ -1,0 +1,67 @@
+import { Router } from 'express';
+import { asyncHandler } from '../../lib/asyncHandler';
+import { requireAuth } from '../../middleware/requireAuth';
+import { requireRole } from '../../middleware/requireRole';
+import { prisma } from '../../config/prisma-client';
+import { NotFoundError } from '../../lib/errors';
+import { toPublicRunCase } from '../runs/serialize';
+import { createResultSchema, reassignSchema } from './schema';
+
+const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
+
+// Mounted at /api/v1/tests
+export const testsRouter = Router();
+testsRouter.use(requireAuth);
+
+testsRouter.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const runCase = await prisma.runCase.findUnique({
+      where: { id: req.params.id },
+      include: { assignedTo: { select: { id: true, name: true } } },
+    });
+    if (!runCase) throw new NotFoundError('Test');
+    res.json({ test: toPublicRunCase(runCase) });
+  }),
+);
+
+testsRouter.patch(
+  '/:id',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = reassignSchema.parse(req.body);
+    const runCase = await prisma.runCase.update({ where: { id: req.params.id }, data: body });
+    res.json({ test: toPublicRunCase(runCase) });
+  }),
+);
+
+testsRouter.get(
+  '/:id/results',
+  asyncHandler(async (req, res) => {
+    const results = await prisma.result.findMany({
+      where: { runCaseId: req.params.id },
+      orderBy: { createdAt: 'desc' },
+      include: { enteredBy: { select: { id: true, name: true } } },
+    });
+    res.json({ results });
+  }),
+);
+
+testsRouter.post(
+  '/:id/results',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = createResultSchema.parse(req.body);
+    const runCase = await prisma.runCase.findUnique({ where: { id: req.params.id } });
+    if (!runCase) throw new NotFoundError('Test');
+
+    const [result] = await prisma.$transaction([
+      prisma.result.create({
+        data: { ...body, runCaseId: runCase.id, enteredById: req.user!.id },
+      }),
+      prisma.runCase.update({ where: { id: runCase.id }, data: { status: body.status } }),
+    ]);
+
+    res.status(201).json({ result });
+  }),
+);

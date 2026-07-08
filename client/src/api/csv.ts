@@ -1,0 +1,25 @@
+import { apiFetch } from '../lib/apiClient';
+import { getAccessToken } from '../lib/tokenStore';
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api/v1';
+
+export function importCasesCsv(suiteId: string, csv: string) {
+  return apiFetch<{ imported: number }>(`/suites/${suiteId}/cases/import`, { method: 'POST', body: { csv } });
+}
+
+export async function downloadCasesCsv(suiteId: string, suiteName: string) {
+  const res = await fetch(`${BASE_URL}/suites/${suiteId}/cases/export`, {
+    credentials: 'include',
+    headers: getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {},
+  });
+  if (!res.ok) throw new Error('Failed to export cases');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${suiteName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-cases.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

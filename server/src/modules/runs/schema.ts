@@ -1,0 +1,16 @@
+import { z } from 'zod';
+
+export const createRunSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  suiteId: z.string(),
+  planId: z.string().optional(),
+  milestoneId: z.string().optional(),
+  configLabel: z.string().max(100).optional(),
+  caseIds: z.array(z.string()).optional(), // omit to include all cases in the suite
+});
+
+export const updateRunSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).optional(),
+});

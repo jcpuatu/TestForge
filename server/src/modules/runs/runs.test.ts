@@ -1,0 +1,109 @@
+import request from 'supertest';
+import { app } from '../../app';
+import { prisma } from '../../config/prisma-client';
+import { hashPassword } from '../../lib/password';
+
+let adminToken: string;
+
+beforeAll(async () => {
+  const admin = await prisma.user.create({
+    data: { email: 'run-admin@example.com', name: 'Run Admin', role: 'ADMIN', passwordHash: await hashPassword('AdminPass123!') },
+  });
+  const login = await request(app).post('/api/v1/auth/login').send({ email: admin.email, password: 'AdminPass123!' });
+  adminToken = login.body.accessToken;
+});
+
+function auth(token: string) {
+  return { Authorization: `Bearer ${token}` };
+}
+
+async function seedSuiteWithCases() {
+  const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'Run Project' });
+  const projectId = project.body.project.id;
+  const suite = await request(app).post(`/api/v1/projects/${projectId}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+  const suiteId = suite.body.suite.id;
+  const section = await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+  const sectionId = section.body.section.id;
+  await request(app).post(`/api/v1/sections/${sectionId}/cases`).set(auth(adminToken)).send({ title: 'Case A', priority: 'HIGH' });
+  await request(app).post(`/api/v1/sections/${sectionId}/cases`).set(auth(adminToken)).send({ title: 'Case B', priority: 'LOW' });
+  return { projectId, suiteId };
+}
+
+describe('runs and results', () => {
+  it('snapshots all non-deleted cases in the suite when created', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Full Run', suiteId });
+    expect(run.status).toBe(201);
+
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth(adminToken));
+    expect(tests.body.tests).toHaveLength(2);
+    expect(tests.body.tests.map((t: { titleSnapshot: string }) => t.titleSnapshot).sort()).toEqual(['Case A', 'Case B']);
+    expect(tests.body.tests.every((t: { status: string }) => t.status === 'UNTESTED')).toBe(true);
+  });
+
+  it('supports a partial run with only selected case ids', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const cases = await request(app).get(`/api/v1/suites/${suiteId}/cases`).set(auth(adminToken));
+    const oneCaseId = cases.body.cases[0].id;
+
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Partial Run', suiteId, caseIds: [oneCaseId] });
+    expect(run.status).toBe(201);
+
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth(adminToken));
+    expect(tests.body.tests).toHaveLength(1);
+  });
+
+  it('submitting a result updates the run case status and appears in history, reflected in the summary', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Result Run', suiteId });
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth(adminToken));
+    const testId = tests.body.tests[0].id;
+
+    const result = await request(app)
+      .post(`/api/v1/tests/${testId}/results`)
+      .set(auth(adminToken))
+      .send({ status: 'FAILED', comment: 'Broke on step 2', defects: 'BUG-42' });
+    expect(result.status).toBe(201);
+
+    const updatedTest = await request(app).get(`/api/v1/tests/${testId}`).set(auth(adminToken));
+    expect(updatedTest.body.test.status).toBe('FAILED');
+
+    const history = await request(app).get(`/api/v1/tests/${testId}/results`).set(auth(adminToken));
+    expect(history.body.results).toHaveLength(1);
+    expect(history.body.results[0].defects).toBe('BUG-42');
+
+    const summary = await request(app).get(`/api/v1/runs/${run.body.run.id}/summary`).set(auth(adminToken));
+    expect(summary.body.counts.FAILED).toBe(1);
+    expect(summary.body.counts.UNTESTED).toBe(1);
+    expect(summary.body.total).toBe(2);
+  });
+
+  it('rejects creating a run with no matching cases', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Empty Run', suiteId, caseIds: ['nonexistent-id'] });
+    expect(run.status).toBe(400);
+  });
+
+  it('closing a run marks it completed', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Close Me', suiteId });
+    const closed = await request(app).post(`/api/v1/runs/${run.body.run.id}/close`).set(auth(adminToken));
+    expect(closed.status).toBe(200);
+    expect(closed.body.run.isCompleted).toBe(true);
+  });
+});

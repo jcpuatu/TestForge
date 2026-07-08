@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite has no native enum type, so "enum-like" fields below are String,
+// validated at the API boundary (Zod) and typed there as literal unions.
+// Role:         ADMIN | LEAD | TESTER | VIEWER
+// Priority:     LOW | MEDIUM | HIGH | CRITICAL
+// CaseType:     FUNCTIONAL | SMOKE | REGRESSION | PERFORMANCE | SECURITY | USABILITY | ACCEPTANCE | OTHER
+// ResultStatus: UNTESTED | PASSED | FAILED | BLOCKED | RETEST
+// WebhookEvent: RUN_COMPLETED | RUN_CREATED | CASE_CREATED
+
+// ── auth ──────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("TESTER")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens    RefreshToken[]
+  apiKeys          ApiKey[]
+  createdCases     TestCase[] @relation("CaseCreatedBy")
+  createdRuns      TestRun[]  @relation("RunCreatedBy")
+  createdPlans     TestPlan[] @relation("PlanCreatedBy")
+  assignedRunCases RunCase[]  @relation("RunCaseAssignee")
+  results          Result[]
+}
+
+model RefreshToken {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId          String
+  tokenHash         String    @unique
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  createdByIp       String?
+  createdAt         DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String
+  keyPrefix  String
+  keyHash    String    @unique
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ── core hierarchy ────────────────────────────────────
+
+model Project {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  suites     Suite[]
+  milestones Milestone[]
+  plans      TestPlan[]
+  runs       TestRun[]
+  webhooks   Webhook[]
+}
+
+model Suite {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sections Section[]
+  cases    TestCase[]
+  runs     TestRun[]
+
+  @@index([projectId])
+}
+
+model Section {
+  id          String    @id @default(cuid())
+  suiteId     String
+  suite       Suite     @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Section?  @relation("SectionTree", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children    Section[] @relation("SectionTree")
+  name        String
+  description String?
+  orderIndex  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  cases TestCase[]
+
+  @@index([suiteId])
+  @@index([parentId])
+}
+
+model TestCase {
+  id             String   @id @default(cuid())
+  suiteId        String
+  suite          Suite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  sectionId      String?
+  section        Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  title          String
+  preconditions  String?
+  steps          String? // JSON-serialized array of { step, expected }
+  expectedResult String?
+  priority       String   @default("MEDIUM")
+  type           String   @default("FUNCTIONAL")
+  estimate       String?
+  referenceLink  String?
+  orderIndex     Int      @default(0)
+  isDeleted      Boolean  @default(false)
+  createdById    String?
+  createdBy      User?    @relation("CaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  runCases RunCase[]
+
+  @@index([suiteId])
+  @@index([sectionId])
+}
+
+// ── planning ──────────────────────────────────────────
+
+model Milestone {
+  id          String      @id @default(cuid())
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Milestone?  @relation("MilestoneTree", fields: [parentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  children    Milestone[] @relation("MilestoneTree")
+  name        String
+  description String?
+  dueDate     DateTime?
+  isCompleted Boolean     @default(false)
+  completedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  plans TestPlan[]
+  runs  TestRun[]
+
+  @@index([projectId])
+}
+
+model TestPlan {
+  id          String     @id @default(cuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestoneId String?
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  name        String
+  description String?
+  isCompleted Boolean    @default(false)
+  completedAt DateTime?
+  createdById String?
+  createdBy   User?      @relation("PlanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  runs TestRun[]
+
+  @@index([projectId])
+  @@index([milestoneId])
+}
+
+// ── execution ─────────────────────────────────────────
+
+model TestRun {
+  id          String     @id @default(cuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  suiteId     String?
+  suite       Suite?     @relation(fields: [suiteId], references: [id], onDelete: SetNull)
+  planId      String?
+  plan        TestPlan?  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  milestoneId String?
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  name        String
+  description String?
+  configLabel String?
+  includeAll  Boolean    @default(true)
+  isCompleted Boolean    @default(false)
+  completedAt DateTime?
+  createdById String?
+  createdBy   User?      @relation("RunCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  runCases RunCase[]
+
+  @@index([projectId])
+  @@index([suiteId])
+  @@index([planId])
+  @@index([milestoneId])
+}
+
+model RunCase {
+  id               String   @id @default(cuid())
+  runId            String
+  run              TestRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  caseId           String?
+  case             TestCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  titleSnapshot    String
+  stepsSnapshot    String? // JSON-serialized array of { step, expected }
+  expectedSnapshot String?
+  priority         String
+  status           String   @default("UNTESTED")
+  assignedToId     String?
+  assignedTo       User?    @relation("RunCaseAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  orderIndex       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  results Result[]
+
+  @@unique([runId, caseId])
+  @@index([runId])
+  @@index([assignedToId])
+}
+
+model Result {
+  id          String   @id @default(cuid())
+  runCaseId   String
+  runCase     RunCase  @relation(fields: [runCaseId], references: [id], onDelete: Cascade)
+  status      String
+  comment     String?
+  defects     String?
+  elapsedMs   Int?
+  enteredById String?
+  enteredBy   User?    @relation(fields: [enteredById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([runCaseId])
+}
+
+// ── integrations ──────────────────────────────────────
+
+model Webhook {
+  id        String   @id @default(cuid())
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  url       String
+  secret    String
+  event     String   @default("RUN_COMPLETED")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+}
+
+model WebhookDelivery {
+  id           String   @id @default(cuid())
+  webhookId    String
+  webhook      Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  statusCode   Int?
+  success      Boolean
+  requestBody  String
+  responseBody String?
+  createdAt    DateTime @default(now())
+
+  @@index([webhookId])
+}
