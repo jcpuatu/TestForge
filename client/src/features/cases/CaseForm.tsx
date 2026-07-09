@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { CaseInput } from '../../api/cases';
-import type { CaseType, Priority, TestCase } from '../../api/types';
+import type { CaseType, Label as CaseLabel, Priority, TestCase } from '../../api/types';
 import { Button } from '../../components/Button';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { stepsToText, textToSteps } from './stepsText';
@@ -19,12 +19,13 @@ export const TYPES: CaseType[] = [
 
 interface CaseFormProps {
   initial?: TestCase;
+  availableLabels?: CaseLabel[];
   submitting?: boolean;
   onSubmit: (input: CaseInput) => void;
   onCancel: () => void;
 }
 
-export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormProps) {
+export function CaseForm({ initial, availableLabels = [], submitting, onSubmit, onCancel }: CaseFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? 'MEDIUM');
   const [type, setType] = useState<CaseType>(initial?.type ?? 'FUNCTIONAL');
@@ -33,6 +34,15 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
   const [expectedResult, setExpectedResult] = useState(initial?.expectedResult ?? '');
   const [estimate, setEstimate] = useState(initial?.estimate ?? '');
   const [referenceLink, setReferenceLink] = useState(initial?.referenceLink ?? '');
+  const [labelIds, setLabelIds] = useState<string[]>(initial?.labels.map((l) => l.id) ?? []);
+
+  function toggleLabel(id: string) {
+    setLabelIds((prev) => {
+      if (prev.includes(id)) return prev.filter((v) => v !== id);
+      if (prev.length >= 10) return prev; // matches TestRail's 10-label cap
+      return [...prev, id];
+    });
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -45,6 +55,7 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
       expectedResult: expectedResult || undefined,
       estimate: estimate || undefined,
       referenceLink: referenceLink || undefined,
+      labelIds,
     });
   }
 
@@ -108,6 +119,24 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
           <Input id="case-reference" placeholder="REQ-1, REQ-2" value={referenceLink} onChange={(e) => setReferenceLink(e.target.value)} />
         </Field>
       </div>
+      {availableLabels.length > 0 && (
+        <Field>
+          <Label>Labels ({labelIds.length}/10)</Label>
+          <div className="flex flex-wrap gap-2">
+            {availableLabels.map((l) => (
+              <label key={l.id} className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={labelIds.includes(l.id)}
+                  disabled={!labelIds.includes(l.id) && labelIds.length >= 10}
+                  onChange={() => toggleLabel(l.id)}
+                />
+                {l.name}
+              </label>
+            ))}
+          </div>
+        </Field>
+      )}
       <div className="flex gap-2">
         <Button type="submit" disabled={submitting}>
           {submitting ? 'Saving…' : 'Save'}

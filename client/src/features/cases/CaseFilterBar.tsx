@@ -3,11 +3,12 @@ import { Filter, ArrowDownUp } from 'lucide-react';
 import type { CaseFilter } from '../../api/cases';
 import { isFilterActive } from '../../api/cases';
 import type { DirectoryUser } from '../../api/users';
-import type { Section } from '../../api/types';
+import type { Label, Section } from '../../api/types';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
 import { Select } from '../../components/Input';
 import { PRIORITIES, TYPES } from './CaseForm';
+import { LabelManager } from './LabelManager';
 
 const SORT_FIELDS: Array<{ value: NonNullable<CaseFilter['sortBy']>; label: string }> = [
   { value: 'orderIndex', label: 'Default order' },
@@ -24,16 +25,23 @@ function toggleInArray<T>(arr: T[], value: T): T[] {
 export function CaseFilterBar({
   sections,
   users,
+  labels,
+  canManageLabels,
+  projectId,
   filter,
   onChange,
 }: {
   sections: Section[];
   users: DirectoryUser[];
+  labels: Label[];
+  canManageLabels: boolean;
+  projectId: string;
   filter: CaseFilter;
   onChange: (filter: CaseFilter) => void;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<CaseFilter>(filter);
+  const [showLabelManager, setShowLabelManager] = useState(false);
 
   function openDialog() {
     setDraft(filter);
@@ -133,6 +141,39 @@ export function CaseFilterBar({
                   {t}
                 </label>
               ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Labels</p>
+              {canManageLabels && (
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  onClick={() => setShowLabelManager((v) => !v)}
+                >
+                  {showLabelManager ? 'Hide label management' : 'Manage labels'}
+                </button>
+              )}
+            </div>
+            {showLabelManager && (
+              <div className="mb-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 p-3">
+                <LabelManager projectId={projectId} labels={labels} />
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {labels.map((l) => (
+                <label key={l.id} className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={draft.labelIds?.includes(l.id) ?? false}
+                    onChange={() => setDraft((d) => ({ ...d, labelIds: toggleInArray(d.labelIds ?? [], l.id) }))}
+                  />
+                  {l.name}
+                </label>
+              ))}
+              {labels.length === 0 && !showLabelManager && <p className="text-xs text-slate-400 dark:text-slate-500">No labels yet.</p>}
             </div>
           </div>
 

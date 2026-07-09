@@ -51,6 +51,13 @@ export interface CaseStep {
   expected?: string;
 }
 
+export interface Label {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt: string;
+}
+
 export interface TestCase {
   id: string;
   suiteId: string;
@@ -64,6 +71,7 @@ export interface TestCase {
   estimate: string | null;
   referenceLink: string | null;
   isDeleted: boolean;
+  labels: Label[];
   createdAt: string;
   updatedAt: string;
 }

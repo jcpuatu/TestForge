@@ -1,4 +1,17 @@
 import type { Prisma } from '@prisma/client';
+import { prisma } from '../../config/prisma-client';
+
+// Replace-all semantics: pass the full desired label set, not a delta. Called from both
+// case create and case update — `labelIds: undefined` means "don't touch labels" (the caller
+// simply omits the key), so this is only invoked when the field was actually present.
+export async function setCaseLabels(caseId: string, labelIds: string[]) {
+  await prisma.$transaction([
+    prisma.testCaseLabel.deleteMany({ where: { caseId } }),
+    ...(labelIds.length > 0
+      ? [prisma.testCaseLabel.createMany({ data: labelIds.map((labelId) => ({ caseId, labelId })) })]
+      : []),
+  ]);
+}
 
 const SORTABLE_FIELDS = ['title', 'priority', 'type', 'createdAt', 'orderIndex'] as const;
 type SortableField = (typeof SORTABLE_FIELDS)[number];
@@ -30,6 +43,7 @@ export function buildCaseListQuery(
   const priorities = splitCsv(query.priorities);
   const types = splitCsv(query.types);
   const createdByIds = splitCsv(query.createdByIds);
+  const labelIds = splitCsv(query.labelIds);
   const createdAfter = typeof query.createdAfter === 'string' ? new Date(query.createdAfter) : null;
   const createdBefore = typeof query.createdBefore === 'string' ? new Date(query.createdBefore) : null;
   const matchAny = query.match === 'any';
@@ -39,6 +53,7 @@ export function buildCaseListQuery(
   if (priorities.length > 0) categoryClauses.push({ priority: { in: priorities } });
   if (types.length > 0) categoryClauses.push({ type: { in: types } });
   if (createdByIds.length > 0) categoryClauses.push({ createdById: { in: createdByIds } });
+  if (labelIds.length > 0) categoryClauses.push({ labels: { some: { labelId: { in: labelIds } } } });
   if (createdAfter || createdBefore) {
     categoryClauses.push({
       createdAt: {

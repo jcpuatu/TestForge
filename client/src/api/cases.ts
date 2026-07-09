@@ -10,6 +10,7 @@ export interface CaseInput {
   type?: CaseType;
   estimate?: string;
   referenceLink?: string;
+  labelIds?: string[];
 }
 
 export interface CaseFilter {
@@ -17,6 +18,7 @@ export interface CaseFilter {
   priorities?: Priority[];
   types?: CaseType[];
   createdByIds?: string[];
+  labelIds?: string[];
   createdAfter?: string;
   createdBefore?: string;
   match?: 'all' | 'any';
@@ -31,6 +33,7 @@ export function isFilterActive(filter: CaseFilter): boolean {
     filter.priorities?.length ||
     filter.types?.length ||
     filter.createdByIds?.length ||
+    filter.labelIds?.length ||
     filter.createdAfter ||
     filter.createdBefore
   );
@@ -42,6 +45,7 @@ export function listCasesBySuite(suiteId: string, filter?: CaseFilter) {
   if (filter?.priorities?.length) params.set('priorities', filter.priorities.join(','));
   if (filter?.types?.length) params.set('types', filter.types.join(','));
   if (filter?.createdByIds?.length) params.set('createdByIds', filter.createdByIds.join(','));
+  if (filter?.labelIds?.length) params.set('labelIds', filter.labelIds.join(','));
   if (filter?.createdAfter) params.set('createdAfter', filter.createdAfter);
   if (filter?.createdBefore) params.set('createdBefore', filter.createdBefore);
   if (filter?.match) params.set('match', filter.match);

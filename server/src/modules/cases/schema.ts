@@ -16,6 +16,7 @@ export const createCaseSchema = z.object({
     .default('FUNCTIONAL'),
   estimate: z.string().max(50).optional(),
   referenceLink: z.string().max(500).optional(),
+  labelIds: z.array(z.string()).max(10).optional(),
 });
 
 export const updateCaseSchema = createCaseSchema.partial().extend({

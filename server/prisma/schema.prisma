@@ -83,6 +83,35 @@ model Project {
   plans      TestPlan[]
   runs       TestRun[]
   webhooks   Webhook[]
+  labels     Label[]
+}
+
+// Project-scoped tags for TestCase/RunCase — a lighter-weight alternative to full custom
+// fields (real TestRail positions it this way explicitly). Only wired to TestCase for now;
+// RunCase ("Test") labels are a natural follow-up, not built yet.
+model Label {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+
+  caseLabels TestCaseLabel[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model TestCaseLabel {
+  id      String   @id @default(cuid())
+  caseId  String
+  case    TestCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  labelId String
+  label   Label    @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, labelId])
+  @@index([caseId])
+  @@index([labelId])
 }
 
 model Suite {
@@ -142,6 +171,7 @@ model TestCase {
   updatedAt      DateTime @updatedAt
 
   runCases RunCase[]
+  labels   TestCaseLabel[]
 
   @@index([suiteId])
   @@index([sectionId])

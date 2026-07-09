@@ -5,9 +5,9 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
 import { bulkRestoreCasesSchema, createCaseSchema, updateCaseSchema } from './schema';
-import { serializeSteps, toPublicCase } from './serialize';
+import { CASE_LABELS_INCLUDE, serializeSteps, toPublicCase } from './serialize';
 import { buildSectionNameMap, casesToCsv, parseCasesCsv } from './csv';
-import { buildCaseListQuery, buildCaseSort } from './service';
+import { buildCaseListQuery, buildCaseSort, setCaseLabels } from './service';
 import { BadRequestError } from '../../lib/errors';
 
 const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
@@ -20,7 +20,7 @@ casesBySuiteRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const { where, orderBy } = buildCaseListQuery(req.params.suiteId, req.query as Record<string, unknown>);
-    const cases = await prisma.testCase.findMany({ where, orderBy });
+    const cases = await prisma.testCase.findMany({ where, orderBy, include: CASE_LABELS_INCLUDE });
     res.json({ cases: cases.map(toPublicCase) });
   }),
 );
@@ -103,6 +103,7 @@ casesBySectionRouter.get(
     const cases = await prisma.testCase.findMany({
       where: { sectionId: req.params.sectionId, isDeleted: deleted === 'true' },
       orderBy: buildCaseSort(req.query as Record<string, unknown>),
+      include: CASE_LABELS_INCLUDE,
     });
     res.json({ cases: cases.map(toPublicCase) });
   }),
@@ -114,7 +115,7 @@ casesBySectionRouter.post(
   asyncHandler(async (req, res) => {
     const section = await prisma.section.findUnique({ where: { id: req.params.sectionId } });
     if (!section) throw new NotFoundError('Section');
-    const body = createCaseSchema.parse(req.body);
+    const { labelIds, ...body } = createCaseSchema.parse(req.body);
     const testCase = await prisma.testCase.create({
       data: {
         ...body,
@@ -124,7 +125,9 @@ casesBySectionRouter.post(
         createdById: req.user!.id,
       },
     });
-    res.status(201).json({ case: toPublicCase(testCase) });
+    if (labelIds && labelIds.length > 0) await setCaseLabels(testCase.id, labelIds);
+    const withLabels = await prisma.testCase.findUniqueOrThrow({ where: { id: testCase.id }, include: CASE_LABELS_INCLUDE });
+    res.status(201).json({ case: toPublicCase(withLabels) });
   }),
 );
 
@@ -135,7 +138,7 @@ casesRouter.use(requireAuth);
 casesRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const testCase = await prisma.testCase.findUnique({ where: { id: req.params.id } });
+    const testCase = await prisma.testCase.findUnique({ where: { id: req.params.id }, include: CASE_LABELS_INCLUDE });
     if (!testCase || testCase.isDeleted) throw new NotFoundError('Test case');
     res.json({ case: toPublicCase(testCase) });
   }),
@@ -145,12 +148,14 @@ casesRouter.patch(
   '/:id',
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
-    const body = updateCaseSchema.parse(req.body);
+    const { labelIds, ...body } = updateCaseSchema.parse(req.body);
     const testCase = await prisma.testCase.update({
       where: { id: req.params.id },
       data: { ...body, steps: serializeSteps(body.steps) },
     });
-    res.json({ case: toPublicCase(testCase) });
+    if (labelIds !== undefined) await setCaseLabels(testCase.id, labelIds);
+    const withLabels = await prisma.testCase.findUniqueOrThrow({ where: { id: testCase.id }, include: CASE_LABELS_INCLUDE });
+    res.json({ case: toPublicCase(withLabels) });
   }),
 );
 

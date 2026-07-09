@@ -7,6 +7,7 @@ import * as casesApi from '../../api/cases';
 import type { CaseFilter, CaseInput } from '../../api/cases';
 import { isFilterActive } from '../../api/cases';
 import * as usersApi from '../../api/users';
+import * as labelsApi from '../../api/labels';
 import type { Section, TestCase } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
@@ -73,6 +74,14 @@ export function SuiteDetailPage() {
   });
 
   const usersQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
+
+  const projectId = suiteQuery.data?.suite.projectId;
+  const labelsQuery = useQuery({
+    queryKey: ['projects', projectId, 'labels'],
+    queryFn: () => labelsApi.listLabels(projectId!),
+    enabled: !!projectId,
+  });
+  const labels = labelsQuery.data?.labels ?? [];
 
   const sections = useMemo(
     () => (suiteQuery.data ? buildIndentedSections(suiteQuery.data.suite.sections) : []),
@@ -459,6 +468,9 @@ export function SuiteDetailPage() {
                 <CaseFilterBar
                   sections={sections}
                   users={usersQuery.data?.users ?? []}
+                  labels={labels}
+                  canManageLabels={canManageStructure}
+                  projectId={projectId ?? ''}
                   filter={caseFilter}
                   onChange={setCaseFilter}
                 />
@@ -469,6 +481,7 @@ export function SuiteDetailPage() {
               {showCaseForm && !showDeleted && !filtering && (
                 <div className="mb-4">
                   <CaseForm
+                    availableLabels={labels}
                     submitting={createCase.isPending}
                     onSubmit={(input) => createCase.mutate(input)}
                     onCancel={() => setShowCaseForm(false)}
@@ -521,6 +534,14 @@ export function SuiteDetailPage() {
                             </Badge>
                           )}
                           <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{testCase.title}</span>
+                          {testCase.labels.map((l) => (
+                            <span
+                              key={l.id}
+                              className="rounded-full border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-400"
+                            >
+                              {l.name}
+                            </span>
+                          ))}
                         </div>
                       </button>
                       {showDeleted ? (
@@ -570,6 +591,7 @@ export function SuiteDetailPage() {
                       <div className="mt-3">
                         <CaseForm
                           initial={editingCase}
+                          availableLabels={labels}
                           submitting={updateCaseMutation.isPending}
                           onSubmit={(input) => updateCaseMutation.mutate(input)}
                           onCancel={() => setEditingCase(null)}

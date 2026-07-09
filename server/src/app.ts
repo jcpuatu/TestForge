@@ -17,6 +17,7 @@ import { milestonesRouter, milestonesNestedRouter } from './modules/milestones/r
 import { plansRouter, plansNestedRouter } from './modules/plans/routes';
 import { dashboardRouter, defectsRouter } from './modules/reports/routes';
 import { webhooksRouter, webhooksNestedRouter } from './modules/webhooks/routes';
+import { labelsRouter, labelsNestedRouter } from './modules/labels/routes';
 import { meRouter } from './modules/me/routes';
 
 export const app = express();
@@ -43,6 +44,7 @@ app.use('/api/v1/projects/:projectId/plans', plansNestedRouter);
 app.use('/api/v1/projects/:projectId/dashboard', dashboardRouter);
 app.use('/api/v1/projects/:projectId/defects', defectsRouter);
 app.use('/api/v1/projects/:projectId/webhooks', webhooksNestedRouter);
+app.use('/api/v1/projects/:projectId/labels', labelsNestedRouter);
 app.use('/api/v1/projects', projectsRouter);
 app.use('/api/v1/suites/:suiteId/sections', sectionsNestedRouter);
 app.use('/api/v1/suites/:suiteId/cases', casesBySuiteRouter);
@@ -54,6 +56,7 @@ app.use('/api/v1/plans/:planId/runs', runsByPlanRouter);
 app.use('/api/v1/plans', plansRouter);
 app.use('/api/v1/milestones', milestonesRouter);
 app.use('/api/v1/webhooks', webhooksRouter);
+app.use('/api/v1/labels', labelsRouter);
 app.use('/api/v1/runs', runsRouter);
 app.use('/api/v1/tests', testsRouter);
 app.use('/api/v1/me', meRouter);
