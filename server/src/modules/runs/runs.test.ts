@@ -62,6 +62,24 @@ describe('runs and results', () => {
     expect(tests.body.tests[0].goalsSnapshot).toBe('Try weird inputs');
   });
 
+  it('accepts start/end dates on creation and rejects date changes once completed', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Dated Run', suiteId, startDate: '2026-01-01T00:00:00.000Z', endDate: '2026-01-10T00:00:00.000Z' });
+    expect(run.status).toBe(201);
+    const runId = run.body.run.id;
+
+    const fetched = await request(app).get(`/api/v1/runs/${runId}`).set(auth(adminToken));
+    expect(fetched.body.run.startDate).not.toBeNull();
+    expect(fetched.body.run.endDate).not.toBeNull();
+
+    await request(app).post(`/api/v1/runs/${runId}/close`).set(auth(adminToken));
+    const blocked = await request(app).patch(`/api/v1/runs/${runId}`).set(auth(adminToken)).send({ endDate: '2026-02-01T00:00:00.000Z' });
+    expect(blocked.status).toBe(400);
+  });
+
   it('supports a partial run with only selected case ids', async () => {
     const { projectId, suiteId } = await seedSuiteWithCases();
     const cases = await request(app).get(`/api/v1/suites/${suiteId}/cases`).set(auth(adminToken));

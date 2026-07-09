@@ -3,7 +3,7 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
-import { NotFoundError } from '../../lib/errors';
+import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createRunSchema, updateRunSchema } from './schema';
 import { createRun, getRunSummary } from './service';
 import { toPublicRunCase } from './serialize';
@@ -63,7 +63,14 @@ runsRouter.use(requireAuth);
 runsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const run = await prisma.testRun.findUnique({ where: { id: req.params.id }, include: { suite: true } });
+    const run = await prisma.testRun.findUnique({
+      where: { id: req.params.id },
+      include: {
+        suite: true,
+        plan: { select: { id: true, name: true, startDate: true, endDate: true } },
+        milestone: { select: { id: true, name: true, startDate: true, dueDate: true } },
+      },
+    });
     if (!run) throw new NotFoundError('Run');
     res.json({ run });
   }),
@@ -74,7 +81,15 @@ runsRouter.patch(
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
     const body = updateRunSchema.parse(req.body);
-    const run = await prisma.testRun.update({ where: { id: req.params.id }, data: body });
+    const existing = await prisma.testRun.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new NotFoundError('Run');
+    if (existing.isCompleted && (body.startDate !== undefined || body.endDate !== undefined)) {
+      throw new BadRequestError('Cannot change dates on a completed run');
+    }
+    const data: Record<string, unknown> = { ...body };
+    if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
+    if (body.endDate !== undefined) data.endDate = body.endDate ? new Date(body.endDate) : null;
+    const run = await prisma.testRun.update({ where: { id: req.params.id }, data });
     res.json({ run });
   }),
 );

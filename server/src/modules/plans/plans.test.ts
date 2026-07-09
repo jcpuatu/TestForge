@@ -59,4 +59,18 @@ describe('plans', () => {
     expect(dbRun).not.toBeNull();
     expect(dbRun?.planId).toBeNull();
   });
+
+  it('accepts start/end dates and a referenceId, and rejects date changes once completed', async () => {
+    const plan = await request(app)
+      .post(`/api/v1/projects/${projectId}/plans`)
+      .set(auth())
+      .send({ name: 'Dated Plan', startDate: '2026-01-01T00:00:00.000Z', endDate: '2026-01-15T00:00:00.000Z', referenceId: 'PROJ-42' });
+    expect(plan.status).toBe(201);
+    expect(plan.body.plan.referenceId).toBe('PROJ-42');
+    const planId = plan.body.plan.id;
+
+    await request(app).patch(`/api/v1/plans/${planId}`).set(auth()).send({ isCompleted: true });
+    const blocked = await request(app).patch(`/api/v1/plans/${planId}`).set(auth()).send({ endDate: '2026-02-01T00:00:00.000Z' });
+    expect(blocked.status).toBe(400);
+  });
 });

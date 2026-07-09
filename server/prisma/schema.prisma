@@ -228,7 +228,9 @@ model Milestone {
   children    Milestone[] @relation("MilestoneTree")
   name        String
   description String?
+  startDate   DateTime?
   dueDate     DateTime?
+  references  String? // external ticket links, comma-separated free text (same convention as TestCase.referenceLink)
   isCompleted Boolean     @default(false)
   completedAt DateTime?
   createdAt   DateTime    @default(now())
@@ -248,6 +250,9 @@ model TestPlan {
   milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   name        String
   description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  referenceId String? // external ticket link, distinct from the milestone association
   isCompleted Boolean    @default(false)
   completedAt DateTime?
   createdById String?
@@ -275,6 +280,8 @@ model TestRun {
   milestone   Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   name        String
   description String?
+  startDate   DateTime?
+  endDate     DateTime?
   configLabel String?
   includeAll  Boolean    @default(true)
   isCompleted Boolean    @default(false)

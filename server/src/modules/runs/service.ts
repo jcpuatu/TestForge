@@ -41,6 +41,8 @@ export async function createRun(projectId: string, input: CreateRunInput, create
         name: input.name,
         description: input.description,
         configLabel: input.configLabel,
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
         includeAll: !input.caseIds,
         createdById,
       },

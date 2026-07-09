@@ -426,6 +426,9 @@ export function RunExecutionPage() {
   const [bulkAssigneeId, setBulkAssigneeId] = useState('');
   const [appliedFilter, setAppliedFilter] = useState<AppliedFilter | null>(null);
   const [filterAssigneeId, setFilterAssigneeId] = useState('');
+  const [editingDates, setEditingDates] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   const runQuery = useQuery({ queryKey: ['runs', runId], queryFn: () => runsApi.getRun(runId!), enabled: !!runId });
   const testsQuery = useQuery({ queryKey: ['runs', runId, 'tests'], queryFn: () => runsApi.listTests(runId!), enabled: !!runId });
@@ -448,6 +451,18 @@ export function RunExecutionPage() {
   const reopenRun = useMutation({
     mutationFn: () => runsApi.reopenRun(runId!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', runId] }),
+  });
+
+  const updateDates = useMutation({
+    mutationFn: () =>
+      runsApi.updateRun(runId!, {
+        startDate: startDate ? new Date(startDate).toISOString() : null,
+        endDate: endDate ? new Date(endDate).toISOString() : null,
+      }),
+    onSuccess: () => {
+      setEditingDates(false);
+      queryClient.invalidateQueries({ queryKey: ['runs', runId] });
+    },
   });
 
   const bulkAssign = useMutation({
@@ -495,6 +510,67 @@ export function RunExecutionPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{run.name}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{run.suite?.name}</p>
+          {editingDates ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                updateDates.mutate();
+              }}
+              className="mt-1 flex flex-wrap items-end gap-2"
+            >
+              <Field>
+                <Label htmlFor="run-start">Start date</Label>
+                <Input id="run-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </Field>
+              <Field>
+                <Label htmlFor="run-end">End date</Label>
+                <Input id="run-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </Field>
+              <Button type="submit" disabled={updateDates.isPending} className="mb-3">
+                Save
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setEditingDates(false)} className="mb-3">
+                Cancel
+              </Button>
+            </form>
+          ) : (
+            <div className="mt-1 flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+              <span>
+                {run.startDate || run.endDate ? (
+                  <>
+                    {run.startDate && `Starts ${new Date(run.startDate).toLocaleDateString()}`}
+                    {run.startDate && run.endDate && ' · '}
+                    {run.endDate && `Ends ${new Date(run.endDate).toLocaleDateString()}`}
+                  </>
+                ) : run.plan?.endDate || run.milestone?.dueDate ? (
+                  <>Inherits {run.plan?.endDate ? 'plan end date' : 'milestone due date'}: {new Date((run.plan?.endDate || run.milestone?.dueDate)!).toLocaleDateString()}</>
+                ) : (
+                  'No dates set'
+                )}
+              </span>
+              {canManage && !run.isCompleted && (
+                <button
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  onClick={() => {
+                    setStartDate(run.startDate ? run.startDate.slice(0, 10) : '');
+                    setEndDate(run.endDate ? run.endDate.slice(0, 10) : '');
+                    setEditingDates(true);
+                  }}
+                >
+                  Edit dates
+                </button>
+              )}
+            </div>
+          )}
+          {run.endDate &&
+            (run.plan?.endDate || run.milestone?.dueDate) &&
+            new Date(run.endDate) > new Date((run.plan?.endDate || run.milestone?.dueDate)!) && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                This run's end date is after its {run.plan?.endDate ? 'plan' : 'milestone'}'s{' '}
+                {run.plan?.endDate ? 'end date' : 'due date'} (
+                {new Date((run.plan?.endDate || run.milestone?.dueDate)!).toLocaleDateString()}).
+              </p>
+            )}
         </div>
         <div className="flex items-center gap-2">
           <button

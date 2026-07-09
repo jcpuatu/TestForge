@@ -7,10 +7,14 @@ export const createRunSchema = z.object({
   planId: z.string().optional(),
   milestoneId: z.string().optional(),
   configLabel: z.string().max(100).optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
   caseIds: z.array(z.string()).optional(), // omit to include all cases in the suite
 });
 
 export const updateRunSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
+  startDate: z.string().datetime().nullable().optional(),
+  endDate: z.string().datetime().nullable().optional(),
 });

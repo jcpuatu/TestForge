@@ -51,4 +51,19 @@ describe('milestones', () => {
     const refetched = await request(app).get(`/api/v1/milestones/${child.body.milestone.id}`).set(auth());
     expect(refetched.body.milestone.parentId).toBeNull();
   });
+
+  it('accepts startDate and references, and rejects date changes once completed', async () => {
+    const created = await request(app)
+      .post(`/api/v1/projects/${projectId}/milestones`)
+      .set(auth())
+      .send({ name: 'Dated milestone', startDate: '2026-01-01T00:00:00.000Z', dueDate: '2026-02-01T00:00:00.000Z', references: 'JIRA-1, JIRA-2' });
+    expect(created.status).toBe(201);
+    expect(created.body.milestone.references).toBe('JIRA-1, JIRA-2');
+    const id = created.body.milestone.id;
+
+    await request(app).patch(`/api/v1/milestones/${id}`).set(auth()).send({ isCompleted: true });
+
+    const blocked = await request(app).patch(`/api/v1/milestones/${id}`).set(auth()).send({ dueDate: '2026-03-01T00:00:00.000Z' });
+    expect(blocked.status).toBe(400);
+  });
 });

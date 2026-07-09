@@ -3,7 +3,7 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
-import { NotFoundError } from '../../lib/errors';
+import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createMilestoneSchema, updateMilestoneSchema } from './schema';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
@@ -29,7 +29,12 @@ milestonesNestedRouter.post(
   asyncHandler(async (req, res) => {
     const body = createMilestoneSchema.parse(req.body);
     const milestone = await prisma.milestone.create({
-      data: { ...body, dueDate: body.dueDate ? new Date(body.dueDate) : undefined, projectId: req.params.projectId },
+      data: {
+        ...body,
+        startDate: body.startDate ? new Date(body.startDate) : undefined,
+        dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+        projectId: req.params.projectId,
+      },
     });
     res.status(201).json({ milestone });
   }),
@@ -53,7 +58,13 @@ milestonesRouter.patch(
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
     const body = updateMilestoneSchema.parse(req.body);
+    const existing = await prisma.milestone.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new NotFoundError('Milestone');
+    if (existing.isCompleted && (body.startDate !== undefined || body.dueDate !== undefined)) {
+      throw new BadRequestError('Cannot change dates on a completed milestone');
+    }
     const data: Record<string, unknown> = { ...body };
+    if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
     if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
     if (body.isCompleted === true) data.completedAt = new Date();
     if (body.isCompleted === false) data.completedAt = null;

@@ -26,6 +26,10 @@ export function PlanDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editingDates, setEditingDates] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [referenceId, setReferenceId] = useState('');
 
   const planQuery = useQuery({ queryKey: ['plans', planId], queryFn: () => plansApi.getPlan(planId!), enabled: !!planId });
   const suitesQuery = useQuery({
@@ -54,6 +58,21 @@ export function PlanDetailPage() {
       showToast('Plan renamed.');
     },
     onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rename plan', 'error'),
+  });
+
+  const updateDates = useMutation({
+    mutationFn: () =>
+      plansApi.updatePlan(planId!, {
+        startDate: startDate ? new Date(startDate).toISOString() : null,
+        endDate: endDate ? new Date(endDate).toISOString() : null,
+        referenceId: referenceId || undefined,
+      }),
+    onSuccess: () => {
+      setEditingDates(false);
+      queryClient.invalidateQueries({ queryKey: ['plans', planId] });
+      showToast('Plan dates updated.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to update dates', 'error'),
   });
 
   const deletePlan = useMutation({
@@ -123,7 +142,73 @@ export function PlanDetailPage() {
           )}
         </div>
       )}
-      {plan.milestone && <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Milestone: {plan.milestone.name}</p>}
+      {plan.milestone && <p className="text-sm text-slate-500 dark:text-slate-400">Milestone: {plan.milestone.name}</p>}
+
+      <div className="mb-6 mt-1">
+        {editingDates ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateDates.mutate();
+            }}
+            className="flex flex-wrap items-end gap-2"
+          >
+            <Field>
+              <Label htmlFor="plan-start">Start date</Label>
+              <Input id="plan-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </Field>
+            <Field>
+              <Label htmlFor="plan-end">End date</Label>
+              <Input id="plan-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </Field>
+            <Field>
+              <Label htmlFor="plan-reference">Reference</Label>
+              <Input id="plan-reference" placeholder="PROJ-42" value={referenceId} onChange={(e) => setReferenceId(e.target.value)} />
+            </Field>
+            <Button type="submit" disabled={updateDates.isPending} className="mb-3">
+              Save
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setEditingDates(false)} className="mb-3">
+              Cancel
+            </Button>
+          </form>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+            <span>
+              {plan.startDate || plan.endDate ? (
+                <>
+                  {plan.startDate && `Starts ${new Date(plan.startDate).toLocaleDateString()}`}
+                  {plan.startDate && plan.endDate && ' · '}
+                  {plan.endDate && `Ends ${new Date(plan.endDate).toLocaleDateString()}`}
+                </>
+              ) : plan.milestone?.dueDate ? (
+                <>Inherits milestone due date: {new Date(plan.milestone.dueDate).toLocaleDateString()}</>
+              ) : (
+                'No dates set'
+              )}
+              {plan.referenceId && ` · Ref: ${plan.referenceId}`}
+            </span>
+            {canManage && !plan.isCompleted && (
+              <button
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                onClick={() => {
+                  setStartDate(plan.startDate ? plan.startDate.slice(0, 10) : '');
+                  setEndDate(plan.endDate ? plan.endDate.slice(0, 10) : '');
+                  setReferenceId(plan.referenceId ?? '');
+                  setEditingDates(true);
+                }}
+              >
+                Edit dates
+              </button>
+            )}
+          </div>
+        )}
+        {plan.endDate && plan.milestone?.dueDate && new Date(plan.endDate) > new Date(plan.milestone.dueDate) && (
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            This plan's end date is after its milestone's due date ({new Date(plan.milestone.dueDate).toLocaleDateString()}).
+          </p>
+        )}
+      </div>
 
       {canManage && (
         <div className="mb-4">

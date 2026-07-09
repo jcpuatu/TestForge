@@ -8,10 +8,14 @@ export interface TestRun {
   name: string;
   description: string | null;
   configLabel: string | null;
+  startDate: string | null;
+  endDate: string | null;
   isCompleted: boolean;
   completedAt: string | null;
   createdAt: string;
   suite?: { name: string } | null;
+  plan?: { id: string; name: string; startDate: string | null; endDate: string | null } | null;
+  milestone?: { id: string; name: string; startDate: string | null; dueDate: string | null } | null;
   _count?: { runCases: number };
 }
 
@@ -61,12 +65,19 @@ export function listRuns(projectId: string) {
   return apiFetch<{ runs: TestRun[] }>(`/projects/${projectId}/runs`);
 }
 
-export function createRun(projectId: string, input: { name: string; description?: string; suiteId: string; caseIds?: string[] }) {
+export function createRun(
+  projectId: string,
+  input: { name: string; description?: string; suiteId: string; startDate?: string; endDate?: string; caseIds?: string[] },
+) {
   return apiFetch<{ run: TestRun }>(`/projects/${projectId}/runs`, { method: 'POST', body: input });
 }
 
 export function getRun(id: string) {
   return apiFetch<{ run: TestRun }>(`/runs/${id}`);
+}
+
+export function updateRun(id: string, input: { name?: string; description?: string; startDate?: string | null; endDate?: string | null }) {
+  return apiFetch<{ run: TestRun }>(`/runs/${id}`, { method: 'PATCH', body: input });
 }
 
 export function closeRun(id: string) {
