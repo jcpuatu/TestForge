@@ -232,7 +232,18 @@ function TestRow({
 
       {expanded && (
         <div className="mt-3 space-y-3">
-          {test.templateSnapshot === 'EXPLORATORY' ? (
+          {test.templateSnapshot === 'BDD' ? (
+            test.bddLinesSnapshot &&
+            test.bddLinesSnapshot.length > 0 && (
+              <ol className="ml-5 list-none space-y-0.5 font-mono text-xs text-slate-600 dark:text-slate-400">
+                {test.bddLinesSnapshot.map((line, i) => (
+                  <li key={i}>
+                    <span className="font-semibold text-blue-700 dark:text-blue-400">{line.keyword}</span> {line.text}
+                  </li>
+                ))}
+              </ol>
+            )
+          ) : test.templateSnapshot === 'EXPLORATORY' ? (
             <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
               {test.missionSnapshot && (
                 <p>

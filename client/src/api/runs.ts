@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiClient';
-import type { CaseTemplate, Priority } from './types';
+import type { BddLine, CaseTemplate, Priority } from './types';
 
 export interface TestRun {
   id: string;
@@ -27,6 +27,7 @@ export interface RunCase {
   expectedSnapshot: string | null;
   missionSnapshot: string | null;
   goalsSnapshot: string | null;
+  bddLinesSnapshot: BddLine[] | null;
   priority: Priority;
   status: ResultStatus;
   assignedToId: string | null;

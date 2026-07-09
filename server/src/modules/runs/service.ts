@@ -59,6 +59,7 @@ export async function createRun(projectId: string, input: CreateRunInput, create
         expectedSnapshot: c.expectedResult,
         missionSnapshot: c.mission,
         goalsSnapshot: c.goals,
+        bddLinesSnapshot: c.bddLines,
         priority: c.priority,
         orderIndex: index,
       })),

@@ -225,4 +225,62 @@ describe('project → suite → section → case CRUD', () => {
     expect(stepsCase.body.case.template).toBe('STEPS');
     expect(stepsCase.body.case.steps).toEqual([{ step: 'Do X', expected: 'Y happens' }]);
   });
+
+  it('creates a BDD-template case with Given/When/Then lines', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'BDD Case Test' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth(adminToken))
+      .send({ name: 'Suite' });
+    const section = await request(app)
+      .post(`/api/v1/suites/${suite.body.suite.id}/sections`)
+      .set(auth(adminToken))
+      .send({ name: 'Section' });
+
+    const bddCase = await request(app)
+      .post(`/api/v1/sections/${section.body.section.id}/cases`)
+      .set(auth(adminToken))
+      .send({
+        title: 'Login scenario',
+        template: 'BDD',
+        bddLines: [
+          { keyword: 'Given', text: 'I am on the login page' },
+          { keyword: 'When', text: 'I enter valid credentials' },
+          { keyword: 'Then', text: 'I should see the dashboard' },
+        ],
+      });
+    expect(bddCase.status).toBe(201);
+    expect(bddCase.body.case.template).toBe('BDD');
+    expect(bddCase.body.case.bddLines).toHaveLength(3);
+  });
+
+  it('imports a .feature file into BDD-template cases and exports them back out', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'Feature Import Test' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth(adminToken))
+      .send({ name: 'Suite' });
+    const suiteId = suite.body.suite.id;
+
+    const featureText = `Feature: Login\n\nScenario: Successful login\nGiven I am on the login page\nWhen I enter valid credentials\nThen I should see the dashboard\n`;
+
+    const imported = await request(app)
+      .post(`/api/v1/suites/${suiteId}/cases/import-feature`)
+      .set(auth(adminToken))
+      .send({ featureText });
+    expect(imported.status).toBe(201);
+    expect(imported.body.imported).toBe(1);
+    expect(imported.body.sectionName).toBe('Login');
+
+    const cases = await request(app).get(`/api/v1/suites/${suiteId}/cases`).set(auth(adminToken));
+    expect(cases.body.cases).toHaveLength(1);
+    expect(cases.body.cases[0].template).toBe('BDD');
+    expect(cases.body.cases[0].title).toBe('Successful login');
+
+    const exported = await request(app).get(`/api/v1/suites/${suiteId}/cases/export-feature`).set(auth(adminToken));
+    expect(exported.status).toBe(200);
+    expect(exported.text).toContain('Feature: Suite');
+    expect(exported.text).toContain('Scenario: Successful login');
+    expect(exported.text).toContain('Given I am on the login page');
+  });
 });

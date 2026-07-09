@@ -197,6 +197,7 @@ model TestCase {
   expectedResult String?
   mission        String? // EXPLORATORY template only
   goals          String? // EXPLORATORY template only
+  bddLines       String? // BDD template only — JSON-serialized array of { keyword, text }
   priority       String   @default("MEDIUM")
   type           String   @default("FUNCTIONAL")
   estimate       String?
@@ -303,6 +304,7 @@ model RunCase {
   expectedSnapshot String?
   missionSnapshot  String?
   goalsSnapshot    String?
+  bddLinesSnapshot String?
   priority         String
   status           String   @default("UNTESTED")
   assignedToId     String?

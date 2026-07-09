@@ -6,6 +6,7 @@ export function toPublicRunCase(runCase: RunCase & { results?: Result[] }) {
   return {
     ...rest,
     stepsSnapshot: rest.stepsSnapshot ? JSON.parse(rest.stepsSnapshot) : null,
+    bddLinesSnapshot: rest.bddLinesSnapshot ? JSON.parse(rest.bddLinesSnapshot) : null,
     latestDefects: latest?.defects ?? null,
     latestComment: latest?.comment ?? null,
   };

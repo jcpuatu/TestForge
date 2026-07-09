@@ -52,6 +52,13 @@ export interface CaseStep {
   expected?: string;
 }
 
+export type BddKeyword = 'Given' | 'When' | 'Then' | 'And' | 'But';
+
+export interface BddLine {
+  keyword: BddKeyword;
+  text: string;
+}
+
 export interface Label {
   id: string;
   projectId: string;
@@ -86,6 +93,7 @@ export interface TestCase {
   expectedResult: string | null;
   mission: string | null;
   goals: string | null;
+  bddLines: BddLine[] | null;
   priority: Priority;
   type: CaseType;
   estimate: string | null;

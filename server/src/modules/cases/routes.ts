@@ -14,6 +14,7 @@ import {
 } from './schema';
 import { CASE_LABELS_INCLUDE, CASE_SHARED_STEPS_INCLUDE, serializeSteps, toPublicCase } from './serialize';
 import { buildSectionNameMap, casesToCsv, parseCasesCsv } from './csv';
+import { casesToFeatureFile, parseFeatureFile } from './gherkin';
 import { buildCaseListQuery, buildCaseSort, setCaseLabels } from './service';
 import { setCaseSharedSteps } from '../sharedSteps/service';
 import { BadRequestError } from '../../lib/errors';
@@ -102,6 +103,69 @@ casesBySuiteRouter.post(
   }),
 );
 
+casesBySuiteRouter.get(
+  '/export-feature',
+  asyncHandler(async (req, res) => {
+    const suite = await prisma.suite.findUnique({ where: { id: req.params.suiteId } });
+    if (!suite) throw new NotFoundError('Suite');
+    const cases = await prisma.testCase.findMany({
+      where: { suiteId: req.params.suiteId, isDeleted: false, template: 'BDD' },
+      orderBy: { orderIndex: 'asc' },
+    });
+    const text = casesToFeatureFile(
+      suite.name,
+      cases.map((c) => ({ title: c.title, bddLines: c.bddLines ? JSON.parse(c.bddLines) : [] })),
+    );
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="${suite.name}.feature"`);
+    res.send(text);
+  }),
+);
+
+casesBySuiteRouter.post(
+  '/import-feature',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const featureText = req.body?.featureText;
+    if (typeof featureText !== 'string' || featureText.trim().length === 0) {
+      throw new BadRequestError('Request body must be { "featureText": "<.feature file contents>" }');
+    }
+    const parsed = parseFeatureFile(featureText);
+    if (parsed.scenarios.length === 0) {
+      throw new BadRequestError('No Scenario blocks found in this .feature file');
+    }
+
+    const suite = await prisma.suite.findUnique({ where: { id: req.params.suiteId } });
+    if (!suite) throw new NotFoundError('Suite');
+
+    // Same by-name auto-create-section convention as CSV import, keyed off the Feature name
+    // since Gherkin scenarios carry no section info of their own.
+    let section = await prisma.section.findFirst({
+      where: { suiteId: suite.id, name: { equals: parsed.featureName } },
+    });
+    if (!section) {
+      section = await prisma.section.create({ data: { suiteId: suite.id, name: parsed.featureName } });
+    }
+
+    let created = 0;
+    for (const scenario of parsed.scenarios) {
+      await prisma.testCase.create({
+        data: {
+          suiteId: suite.id,
+          sectionId: section.id,
+          title: scenario.name,
+          template: 'BDD',
+          bddLines: JSON.stringify(scenario.lines),
+          createdById: req.user!.id,
+        },
+      });
+      created++;
+    }
+
+    res.status(201).json({ imported: created, sectionName: parsed.featureName });
+  }),
+);
+
 // Mounted at /api/v1/sections/:sectionId/cases
 export const casesBySectionRouter = Router({ mergeParams: true });
 casesBySectionRouter.use(requireAuth);
@@ -130,6 +194,7 @@ casesBySectionRouter.post(
       data: {
         ...body,
         steps: serializeSteps(body.steps),
+        bddLines: serializeSteps(body.bddLines),
         suiteId: section.suiteId,
         sectionId: section.id,
         createdById: req.user!.id,
@@ -175,7 +240,7 @@ casesRouter.patch(
     const { labelIds, sharedStepSetIds, ...body } = updateCaseSchema.parse(req.body);
     const testCase = await prisma.testCase.update({
       where: { id: req.params.id },
-      data: { ...body, steps: serializeSteps(body.steps) },
+      data: { ...body, steps: serializeSteps(body.steps), bddLines: serializeSteps(body.bddLines) },
     });
     if (labelIds !== undefined) await setCaseLabels(testCase.id, labelIds);
     if (sharedStepSetIds !== undefined) await setCaseSharedSteps(testCase.id, sharedStepSetIds);

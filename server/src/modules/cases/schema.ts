@@ -5,6 +5,11 @@ const stepSchema = z.object({
   expected: z.string().optional(),
 });
 
+const bddLineSchema = z.object({
+  keyword: z.enum(['Given', 'When', 'Then', 'And', 'But']),
+  text: z.string(),
+});
+
 export const createCaseSchema = z.object({
   title: z.string().min(1).max(300),
   template: z.enum(['TEXT', 'STEPS', 'EXPLORATORY', 'BDD']).default('TEXT'),
@@ -13,6 +18,7 @@ export const createCaseSchema = z.object({
   expectedResult: z.string().max(4000).optional(),
   mission: z.string().max(2000).optional(),
   goals: z.string().max(2000).optional(),
+  bddLines: z.array(bddLineSchema).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
   type: z
     .enum(['FUNCTIONAL', 'SMOKE', 'REGRESSION', 'PERFORMANCE', 'SECURITY', 'USABILITY', 'ACCEPTANCE', 'OTHER'])

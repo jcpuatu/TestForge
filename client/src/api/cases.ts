@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiClient';
-import type { CaseStep, CaseTemplate, CaseType, Priority, TestCase } from './types';
+import type { BddLine, CaseStep, CaseTemplate, CaseType, Priority, TestCase } from './types';
 
 export interface CaseInput {
   title: string;
@@ -9,6 +9,7 @@ export interface CaseInput {
   expectedResult?: string;
   mission?: string;
   goals?: string;
+  bddLines?: BddLine[];
   priority?: Priority;
   type?: CaseType;
   estimate?: string;

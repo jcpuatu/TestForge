@@ -8,6 +8,7 @@ import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { useToast } from '../../components/Toast';
 import { ApiError } from '../../lib/apiClient';
 import { stepsToText, textToSteps } from './stepsText';
+import { bddLinesToText, textToBddLines } from './bddLinesText';
 
 export const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 export const TYPES: CaseType[] = [
@@ -21,12 +22,11 @@ export const TYPES: CaseType[] = [
   'OTHER',
 ];
 
-// BDD is deliberately not selectable here yet — it gets its own Gherkin scenario editor
-// instead of these fields; selecting it here with nothing to author would be a dead end.
 const TEMPLATES: Array<{ value: CaseTemplate; label: string }> = [
   { value: 'TEXT', label: 'Test Case (Text)' },
   { value: 'STEPS', label: 'Test Case (Steps)' },
   { value: 'EXPLORATORY', label: 'Exploratory Session' },
+  { value: 'BDD', label: 'BDD Scenario' },
 ];
 
 interface CaseFormProps {
@@ -61,6 +61,7 @@ export function CaseForm({
   const [expectedResult, setExpectedResult] = useState(initial?.expectedResult ?? '');
   const [mission, setMission] = useState(initial?.mission ?? '');
   const [goals, setGoals] = useState(initial?.goals ?? '');
+  const [bddText, setBddText] = useState(bddLinesToText(initial?.bddLines));
   const [estimate, setEstimate] = useState(initial?.estimate ?? '');
   const [referenceLink, setReferenceLink] = useState(initial?.referenceLink ?? '');
   const [labelIds, setLabelIds] = useState<string[]>(initial?.labels.map((l) => l.id) ?? []);
@@ -100,19 +101,21 @@ export function CaseForm({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    const hasStepFields = template === 'TEXT' || template === 'STEPS';
     onSubmit({
       title,
       template,
-      preconditions: template === 'EXPLORATORY' ? undefined : preconditions || undefined,
+      preconditions: hasStepFields ? preconditions || undefined : undefined,
       steps:
         template === 'STEPS'
           ? textToSteps(stepsText)
           : template === 'TEXT' && textSteps
             ? [{ step: textSteps }]
             : undefined,
-      expectedResult: template === 'EXPLORATORY' ? undefined : expectedResult || undefined,
+      expectedResult: hasStepFields ? expectedResult || undefined : undefined,
       mission: template === 'EXPLORATORY' ? mission || undefined : undefined,
       goals: template === 'EXPLORATORY' ? goals || undefined : undefined,
+      bddLines: template === 'BDD' ? textToBddLines(bddText) : undefined,
       priority,
       type,
       estimate: estimate || undefined,
@@ -160,7 +163,18 @@ export function CaseForm({
           </Select>
         </Field>
       </div>
-      {template === 'EXPLORATORY' ? (
+      {template === 'BDD' ? (
+        <Field>
+          <Label htmlFor="case-bdd">Scenario steps (one per line — "Given/When/Then/And/But …")</Label>
+          <Textarea
+            id="case-bdd"
+            rows={5}
+            placeholder={'Given I am on the login page\nWhen I enter valid credentials\nThen I should see the dashboard'}
+            value={bddText}
+            onChange={(e) => setBddText(e.target.value)}
+          />
+        </Field>
+      ) : template === 'EXPLORATORY' ? (
         <>
           <Field>
             <Label htmlFor="case-mission">Mission</Label>

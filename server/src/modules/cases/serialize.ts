@@ -14,6 +14,7 @@ export function toPublicCase(testCase: CaseWithLabels) {
   return {
     ...rest,
     steps: testCase.steps ? JSON.parse(testCase.steps) : null,
+    bddLines: testCase.bddLines ? JSON.parse(testCase.bddLines) : null,
     labels: labels ? labels.map((l) => l.label) : [],
     // Resolved (not merged into `steps`) so the client can render each block under its own
     // "Shared: <name>" heading — live-linked, always reflects the set's *current* content.

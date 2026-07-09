@@ -24,7 +24,7 @@ import { BulkCaseActionsBar } from './BulkCaseActionsBar';
 import { SectionTree } from './SectionTree';
 import { SharedStepsManager } from './SharedStepsManager';
 import { ApiError } from '../../lib/apiClient';
-import { downloadCasesCsv, importCasesCsv } from '../../api/csv';
+import { downloadCasesCsv, downloadFeatureFile, importCasesCsv, importFeatureFile } from '../../api/csv';
 
 function buildIndentedSections(sections: Section[]): Array<Section & { depth: number }> {
   const byParent = new Map<string | null, Section[]>();
@@ -83,6 +83,7 @@ export function SuiteDetailPage() {
   const [csvMessage, setCsvMessage] = useState<string | null>(null);
   const [showSharedStepsManager, setShowSharedStepsManager] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const featureFileInputRef = useRef<HTMLInputElement>(null);
 
   const [editingSuiteName, setEditingSuiteName] = useState<string | null>(null);
   const [suiteDeleteOpen, setSuiteDeleteOpen] = useState(false);
@@ -333,6 +334,16 @@ export function SuiteDetailPage() {
     onError: (err) => setCsvMessage(err instanceof ApiError ? err.message : 'Failed to import CSV'),
   });
 
+  const importFeature = useMutation({
+    mutationFn: (featureText: string) => importFeatureFile(suiteId!, featureText),
+    onSuccess: (data) => {
+      setCsvMessage(`Imported ${data.imported} scenario${data.imported === 1 ? '' : 's'} into "${data.sectionName}".`);
+      queryClient.invalidateQueries({ queryKey: ['suites', suiteId] });
+      queryClient.invalidateQueries({ queryKey: ['sections', activeSectionId, 'cases'] });
+    },
+    onError: (err) => setCsvMessage(err instanceof ApiError ? err.message : 'Failed to import .feature file'),
+  });
+
   function handleCreateSection(e: FormEvent) {
     e.preventDefault();
     createSection.mutate();
@@ -343,6 +354,15 @@ export function SuiteDetailPage() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => importCsv.mutate(String(reader.result));
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  function handleImportFeatureFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => importFeature.mutate(String(reader.result));
     reader.readAsText(file);
     e.target.value = '';
   }
@@ -422,6 +442,29 @@ export function SuiteDetailPage() {
               <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleImportFileChange} />
               <button className="text-sm text-blue-600 dark:text-blue-400 hover:underline" onClick={() => fileInputRef.current?.click()}>
                 {importCsv.isPending ? 'Importing…' : 'Import CSV'}
+              </button>
+            </>
+          )}
+          <button
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            onClick={() => downloadFeatureFile(suite.id, suite.name)}
+          >
+            Export .feature
+          </button>
+          {canWriteCases && (
+            <>
+              <input
+                ref={featureFileInputRef}
+                type="file"
+                accept=".feature"
+                className="hidden"
+                onChange={handleImportFeatureFileChange}
+              />
+              <button
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                onClick={() => featureFileInputRef.current?.click()}
+              >
+                {importFeature.isPending ? 'Importing…' : 'Import .feature'}
               </button>
             </>
           )}
@@ -681,7 +724,18 @@ export function SuiteDetailPage() {
                     ) : (
                       expandedCaseId === testCase.id && (
                         <div className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                          {testCase.template === 'EXPLORATORY' ? (
+                          {testCase.template === 'BDD' ? (
+                            testCase.bddLines &&
+                            testCase.bddLines.length > 0 && (
+                              <ol className="ml-5 list-none space-y-0.5 font-mono text-xs">
+                                {testCase.bddLines.map((line, i) => (
+                                  <li key={i}>
+                                    <span className="font-semibold text-blue-700 dark:text-blue-400">{line.keyword}</span> {line.text}
+                                  </li>
+                                ))}
+                              </ol>
+                            )
+                          ) : testCase.template === 'EXPLORATORY' ? (
                             <>
                               {testCase.mission && (
                                 <p>
