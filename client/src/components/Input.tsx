@@ -1,4 +1,5 @@
 import type { InputHTMLAttributes, LabelHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
+import { ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
 
 const FIELD_CLASSES =
@@ -12,8 +13,20 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   return <textarea className={clsx(FIELD_CLASSES, className)} {...props} />;
 }
 
+// Native <select> arrows are drawn by the browser inside the existing padding box, with no
+// guaranteed clearance — long option text (or a narrow/text-xs instance) can render under it.
+// appearance-none removes the native arrow entirely and a manually-positioned icon replaces it,
+// so overlap can't happen regardless of content length, width, or browser.
 export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={clsx(FIELD_CLASSES, 'bg-white dark:bg-slate-800', className)} {...props} />;
+  return (
+    <div className="relative">
+      <select
+        className={clsx(FIELD_CLASSES, 'appearance-none bg-white pr-8 dark:bg-slate-800', className)}
+        {...props}
+      />
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+    </div>
+  );
 }
 
 export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {

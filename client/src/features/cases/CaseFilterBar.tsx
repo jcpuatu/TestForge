@@ -89,8 +89,8 @@ export function CaseFilterBar({
           onChange={(e) => onChange({ ...filter, sortDir: e.target.value as CaseFilter['sortDir'] })}
           className="py-1 text-xs"
         >
-          <option value="asc">Asc</option>
-          <option value="desc">Desc</option>
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
         </Select>
       </div>
 
