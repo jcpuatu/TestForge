@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
@@ -17,6 +17,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { CaseForm } from './CaseForm';
 import { CaseFilterBar } from './CaseFilterBar';
+import { BulkCaseActionsBar } from './BulkCaseActionsBar';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, importCasesCsv } from '../../api/csv';
 
@@ -63,7 +64,7 @@ export function SuiteDetailPage() {
   const [editSectionName, setEditSectionName] = useState('');
   const [sectionDeleteTarget, setSectionDeleteTarget] = useState<Section | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [selectedDeletedIds, setSelectedDeletedIds] = useState<Set<string>>(new Set());
+  const [selectedCaseIds, setSelectedCaseIds] = useState<Set<string>>(new Set());
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<TestCase | null>(null);
   const [caseFilter, setCaseFilter] = useState<CaseFilter>({});
 
@@ -106,6 +107,13 @@ export function SuiteDetailPage() {
   });
 
   const casesQuery = filtering ? filteredCasesQuery : sectionCasesQuery;
+
+  // Clear any bulk-selection whenever the visible case list changes to a different set —
+  // otherwise a stale selection from a previous section/filter view could get bulk-edited
+  // without those cases even being on screen anymore.
+  useEffect(() => {
+    setSelectedCaseIds(new Set());
+  }, [activeSectionId, filtering, showDeleted]);
 
   const createSection = useMutation({
     mutationFn: () =>
@@ -206,9 +214,9 @@ export function SuiteDetailPage() {
   });
 
   const bulkRestoreMutation = useMutation({
-    mutationFn: () => casesApi.bulkRestoreCases([...selectedDeletedIds]),
+    mutationFn: () => casesApi.bulkRestoreCases([...selectedCaseIds]),
     onSuccess: (data) => {
-      setSelectedDeletedIds(new Set());
+      setSelectedCaseIds(new Set());
       queryClient.invalidateQueries({ queryKey: ['sections', activeSectionId, 'cases'] });
       showToast(`Restored ${data.restored} test case(s).`);
     },
@@ -444,7 +452,7 @@ export function SuiteDetailPage() {
                         checked={showDeleted}
                         onChange={(e) => {
                           setShowDeleted(e.target.checked);
-                          setSelectedDeletedIds(new Set());
+                          setSelectedCaseIds(new Set());
                         }}
                       />
                       Show deleted
@@ -489,9 +497,9 @@ export function SuiteDetailPage() {
                 </div>
               )}
 
-              {showDeleted && selectedDeletedIds.size > 0 && (
+              {showDeleted && selectedCaseIds.size > 0 && (
                 <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 px-3 py-2">
-                  <span className="text-xs text-slate-600 dark:text-slate-400">{selectedDeletedIds.size} selected</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-400">{selectedCaseIds.size} selected</span>
                   <Button
                     variant="secondary"
                     onClick={() => bulkRestoreMutation.mutate()}
@@ -502,17 +510,28 @@ export function SuiteDetailPage() {
                 </div>
               )}
 
+              {!showDeleted && selectedCaseIds.size > 0 && (
+                <BulkCaseActionsBar
+                  suiteId={suiteId!}
+                  selectedIds={[...selectedCaseIds]}
+                  sections={sections}
+                  labels={labels}
+                  canDelete={canManageStructure}
+                  onDone={() => setSelectedCaseIds(new Set())}
+                />
+              )}
+
               <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
                 {casesQuery.data?.cases.map((testCase) => (
                   <div key={testCase.id} className="p-3">
                     <div className="flex items-center justify-between">
-                      {showDeleted && (
+                      {canWriteCases && (
                         <input
                           type="checkbox"
                           className="mr-2"
-                          checked={selectedDeletedIds.has(testCase.id)}
+                          checked={selectedCaseIds.has(testCase.id)}
                           onChange={(e) => {
-                            setSelectedDeletedIds((prev) => {
+                            setSelectedCaseIds((prev) => {
                               const next = new Set(prev);
                               if (e.target.checked) next.add(testCase.id);
                               else next.delete(testCase.id);

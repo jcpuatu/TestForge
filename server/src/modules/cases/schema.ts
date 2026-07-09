@@ -26,3 +26,25 @@ export const updateCaseSchema = createCaseSchema.partial().extend({
 export const bulkRestoreCasesSchema = z.object({
   caseIds: z.array(z.string()).min(1).max(500),
 });
+
+export const bulkDeleteCasesSchema = z.object({
+  caseIds: z.array(z.string()).min(1).max(500),
+});
+
+// Only priority/type/sectionId are bulk-editable — free-text fields (title, steps, etc.) don't
+// make sense to overwrite identically across many cases at once.
+export const bulkUpdateCasesSchema = z.object({
+  caseIds: z.array(z.string()).min(1).max(500),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
+  type: z
+    .enum(['FUNCTIONAL', 'SMOKE', 'REGRESSION', 'PERFORMANCE', 'SECURITY', 'USABILITY', 'ACCEPTANCE', 'OTHER'])
+    .optional(),
+  sectionId: z.string().optional(),
+});
+
+// Additive (not replace-all) — matches TestRail's own bulk-label behavior: applying labels to
+// many cases at once adds to whatever each case already has, it doesn't overwrite it.
+export const bulkAddLabelsSchema = z.object({
+  caseIds: z.array(z.string()).min(1).max(500),
+  labelIds: z.array(z.string()).min(1).max(10),
+});

@@ -92,3 +92,15 @@ export function bulkRestoreCases(caseIds: string[]) {
 export function permanentlyDeleteCase(id: string) {
   return apiFetch<void>(`/cases/${id}/permanent`, { method: 'DELETE' });
 }
+
+export function bulkDeleteCases(caseIds: string[]) {
+  return apiFetch<{ deleted: number }>('/cases/bulk-delete', { method: 'POST', body: { caseIds } });
+}
+
+export function bulkUpdateCases(caseIds: string[], fields: { priority?: Priority; type?: CaseType; sectionId?: string }) {
+  return apiFetch<{ updated: number }>('/cases/bulk-update', { method: 'PATCH', body: { caseIds, ...fields } });
+}
+
+export function bulkAddLabels(caseIds: string[], labelIds: string[]) {
+  return apiFetch<{ updated: number }>('/cases/bulk-add-labels', { method: 'POST', body: { caseIds, labelIds } });
+}

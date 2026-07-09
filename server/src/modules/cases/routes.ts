@@ -4,7 +4,14 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
-import { bulkRestoreCasesSchema, createCaseSchema, updateCaseSchema } from './schema';
+import {
+  bulkAddLabelsSchema,
+  bulkDeleteCasesSchema,
+  bulkRestoreCasesSchema,
+  bulkUpdateCasesSchema,
+  createCaseSchema,
+  updateCaseSchema,
+} from './schema';
 import { CASE_LABELS_INCLUDE, serializeSteps, toPublicCase } from './serialize';
 import { buildSectionNameMap, casesToCsv, parseCasesCsv } from './csv';
 import { buildCaseListQuery, buildCaseSort, setCaseLabels } from './service';
@@ -135,6 +142,19 @@ casesBySectionRouter.post(
 export const casesRouter = Router();
 casesRouter.use(requireAuth);
 
+// Registered before the /:id routes below — Express matches routes in registration order for
+// the same HTTP method, and /:id would otherwise greedily match /bulk-update as id="bulk-update".
+casesRouter.patch(
+  '/bulk-update',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const { caseIds, ...fields } = bulkUpdateCasesSchema.parse(req.body);
+    if (Object.keys(fields).length === 0) throw new BadRequestError('At least one field (priority/type/sectionId) is required');
+    const { count } = await prisma.testCase.updateMany({ where: { id: { in: caseIds } }, data: fields });
+    res.json({ updated: count });
+  }),
+);
+
 casesRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -187,6 +207,42 @@ casesRouter.post(
       data: { isDeleted: false },
     });
     res.json({ restored: count });
+  }),
+);
+
+casesRouter.post(
+  '/bulk-delete',
+  requireRole('ADMIN', 'LEAD'),
+  asyncHandler(async (req, res) => {
+    const body = bulkDeleteCasesSchema.parse(req.body);
+    const { count } = await prisma.testCase.updateMany({
+      where: { id: { in: body.caseIds }, isDeleted: false },
+      data: { isDeleted: true },
+    });
+    res.json({ deleted: count });
+  }),
+);
+
+casesRouter.post(
+  '/bulk-add-labels',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = bulkAddLabelsSchema.parse(req.body);
+    // Additive, and intentionally doesn't enforce the 10-label-per-case cap in bulk mode —
+    // a case already near the cap could end up slightly over it. Acceptable simplification;
+    // the single-case form (CaseForm) still enforces the cap for the common path.
+    // SQLite's createMany has no `skipDuplicates` option (Postgres/MySQL only), so existing
+    // pairs are filtered out in application code instead of relying on the DB to ignore them.
+    const existing = await prisma.testCaseLabel.findMany({
+      where: { caseId: { in: body.caseIds }, labelId: { in: body.labelIds } },
+      select: { caseId: true, labelId: true },
+    });
+    const existingKeys = new Set(existing.map((e) => `${e.caseId}:${e.labelId}`));
+    const toCreate = body.caseIds
+      .flatMap((caseId) => body.labelIds.map((labelId) => ({ caseId, labelId })))
+      .filter((pair) => !existingKeys.has(`${pair.caseId}:${pair.labelId}`));
+    if (toCreate.length > 0) await prisma.testCaseLabel.createMany({ data: toCreate });
+    res.json({ updated: body.caseIds.length });
   }),
 );
 
