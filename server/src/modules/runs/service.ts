@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
+import { resolveStepsForCases } from '../sharedSteps/service';
 import type { createRunSchema } from './schema';
 import type { z } from 'zod';
 
@@ -25,6 +26,11 @@ export async function createRun(projectId: string, input: CreateRunInput, create
     throw new BadRequestError('No matching test cases to include in this run');
   }
 
+  // Resolved (own steps + every attached shared-step-set's steps, flattened) once, up front —
+  // the snapshot must be fully self-contained so later edits to a case or a shared set it used
+  // never retroactively alter history.
+  const resolvedSteps = await resolveStepsForCases(cases);
+
   const run = await prisma.$transaction(async (tx) => {
     const created = await tx.testRun.create({
       data: {
@@ -46,7 +52,10 @@ export async function createRun(projectId: string, input: CreateRunInput, create
         caseId: c.id,
         titleSnapshot: c.title,
         templateSnapshot: c.template,
-        stepsSnapshot: c.steps,
+        stepsSnapshot: (() => {
+          const steps = resolvedSteps.get(c.id) ?? [];
+          return steps.length > 0 ? JSON.stringify(steps) : null;
+        })(),
         expectedSnapshot: c.expectedResult,
         missionSnapshot: c.mission,
         goalsSnapshot: c.goals,

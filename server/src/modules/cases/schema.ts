@@ -20,6 +20,7 @@ export const createCaseSchema = z.object({
   estimate: z.string().max(50).optional(),
   referenceLink: z.string().max(500).optional(),
   labelIds: z.array(z.string()).max(10).optional(),
+  sharedStepSetIds: z.array(z.string()).max(20).optional(),
 });
 
 export const updateCaseSchema = createCaseSchema.partial().extend({

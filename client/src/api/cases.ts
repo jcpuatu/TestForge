@@ -14,6 +14,7 @@ export interface CaseInput {
   estimate?: string;
   referenceLink?: string;
   labelIds?: string[];
+  sharedStepSetIds?: string[];
 }
 
 export interface CaseFilter {

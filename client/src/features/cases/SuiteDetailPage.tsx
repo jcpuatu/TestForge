@@ -9,17 +9,20 @@ import type { CaseFilter, CaseInput } from '../../api/cases';
 import { isFilterActive } from '../../api/cases';
 import * as usersApi from '../../api/users';
 import * as labelsApi from '../../api/labels';
+import * as sharedStepsApi from '../../api/sharedSteps';
 import type { Section, TestCase } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
 import { Field, Input, Label, Select } from '../../components/Input';
 import { PriorityBadge, Badge } from '../../components/Badge';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { CaseForm } from './CaseForm';
 import { CaseFilterBar } from './CaseFilterBar';
 import { BulkCaseActionsBar } from './BulkCaseActionsBar';
 import { SectionTree } from './SectionTree';
+import { SharedStepsManager } from './SharedStepsManager';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, importCasesCsv } from '../../api/csv';
 
@@ -78,6 +81,7 @@ export function SuiteDetailPage() {
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [csvMessage, setCsvMessage] = useState<string | null>(null);
+  const [showSharedStepsManager, setShowSharedStepsManager] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editingSuiteName, setEditingSuiteName] = useState<string | null>(null);
@@ -105,6 +109,12 @@ export function SuiteDetailPage() {
     enabled: !!projectId,
   });
   const labels = labelsQuery.data?.labels ?? [];
+  const sharedStepSetsQuery = useQuery({
+    queryKey: ['projects', projectId, 'shared-step-sets'],
+    queryFn: () => sharedStepsApi.listSharedStepSets(projectId!),
+    enabled: !!projectId,
+  });
+  const sharedStepSets = sharedStepSetsQuery.data?.sharedStepSets ?? [];
 
   const sections = useMemo(
     () => (suiteQuery.data ? buildIndentedSections(suiteQuery.data.suite.sections) : []),
@@ -397,6 +407,12 @@ export function SuiteDetailPage() {
           {csvMessage && <span className="text-xs text-slate-500 dark:text-slate-400">{csvMessage}</span>}
           <button
             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+            onClick={() => setShowSharedStepsManager(true)}
+          >
+            Shared Steps
+          </button>
+          <button
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
             onClick={() => downloadCasesCsv(suite.id, suite.name)}
           >
             Export CSV
@@ -533,6 +549,7 @@ export function SuiteDetailPage() {
                 <div className="mb-4">
                   <CaseForm
                     availableLabels={labels}
+                    availableSharedStepSets={sharedStepSets}
                     submitting={createCase.isPending}
                     onSubmit={(input) => createCase.mutate(input)}
                     onCancel={() => setShowCaseForm(false)}
@@ -655,6 +672,7 @@ export function SuiteDetailPage() {
                         <CaseForm
                           initial={editingCase}
                           availableLabels={labels}
+                          availableSharedStepSets={sharedStepSets}
                           submitting={updateCaseMutation.isPending}
                           onSubmit={(input) => updateCaseMutation.mutate(input)}
                           onCancel={() => setEditingCase(null)}
@@ -705,6 +723,19 @@ export function SuiteDetailPage() {
                                   {testCase.steps[0].step}
                                 </p>
                               )}
+                              {testCase.sharedSteps.map((set) => (
+                                <div key={set.id}>
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Shared: {set.name}</span>
+                                  <ol className="ml-5 list-decimal">
+                                    {set.steps.map((step, i) => (
+                                      <li key={i}>
+                                        {step.step}
+                                        {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              ))}
                               {testCase.expectedResult && (
                                 <p>
                                   <span className="font-medium text-slate-700 dark:text-slate-300">Expected result: </span>
@@ -803,6 +834,10 @@ export function SuiteDetailPage() {
         confirming={permanentDeleteMutation.isPending}
         message="This immediately and permanently removes the test case. It cannot be restored."
       />
+
+      <Modal open={showSharedStepsManager} onClose={() => setShowSharedStepsManager(false)} title="Shared step sets">
+        <SharedStepsManager projectId={projectId ?? ''} sharedStepSets={sharedStepSets} />
+      </Modal>
     </div>
   );
 }

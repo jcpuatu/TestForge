@@ -82,9 +82,10 @@ model Project {
   suites     Suite[]
   milestones Milestone[]
   plans      TestPlan[]
-  runs       TestRun[]
-  webhooks   Webhook[]
-  labels     Label[]
+  runs           TestRun[]
+  webhooks       Webhook[]
+  labels         Label[]
+  sharedStepSets SharedStepSet[]
 }
 
 // Project-scoped tags for TestCase/RunCase — a lighter-weight alternative to full custom
@@ -113,6 +114,39 @@ model TestCaseLabel {
   @@unique([caseId, labelId])
   @@index([caseId])
   @@index([labelId])
+}
+
+// Project-scoped, named, ordered step lists reusable across cases. Live-linked: a case
+// attaching a set always reads its current `steps` at render time (never copies them in), so
+// editing a set here propagates to every case using it. Contrast with a Run, which resolves
+// (flattens) every attached set's steps into RunCase.stepsSnapshot once at run-creation time —
+// runs must stay immutable regardless of later edits to the source case or its shared sets.
+model SharedStepSet {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  steps     String // JSON-serialized array of { step, expected }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  caseLinks TestCaseSharedSteps[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model TestCaseSharedSteps {
+  id              String        @id @default(cuid())
+  caseId          String
+  case            TestCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  sharedStepSetId String
+  sharedStepSet   SharedStepSet @relation(fields: [sharedStepSetId], references: [id], onDelete: Cascade)
+  orderIndex      Int           @default(0)
+
+  @@unique([caseId, sharedStepSetId])
+  @@index([caseId])
+  @@index([sharedStepSetId])
 }
 
 model Suite {
@@ -174,8 +208,9 @@ model TestCase {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  runCases RunCase[]
-  labels   TestCaseLabel[]
+  runCases        RunCase[]
+  labels          TestCaseLabel[]
+  sharedStepLinks TestCaseSharedSteps[]
 
   @@index([suiteId])
   @@index([sectionId])

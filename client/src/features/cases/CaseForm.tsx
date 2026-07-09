@@ -1,8 +1,12 @@
 import { useState, type FormEvent } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CaseInput } from '../../api/cases';
-import type { CaseTemplate, CaseType, Label as CaseLabel, Priority, TestCase } from '../../api/types';
+import * as sharedStepsApi from '../../api/sharedSteps';
+import type { CaseTemplate, CaseType, Label as CaseLabel, Priority, SharedStepSet, TestCase } from '../../api/types';
 import { Button } from '../../components/Button';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
+import { useToast } from '../../components/Toast';
+import { ApiError } from '../../lib/apiClient';
 import { stepsToText, textToSteps } from './stepsText';
 
 export const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -28,12 +32,22 @@ const TEMPLATES: Array<{ value: CaseTemplate; label: string }> = [
 interface CaseFormProps {
   initial?: TestCase;
   availableLabels?: CaseLabel[];
+  availableSharedStepSets?: SharedStepSet[];
   submitting?: boolean;
   onSubmit: (input: CaseInput) => void;
   onCancel: () => void;
 }
 
-export function CaseForm({ initial, availableLabels = [], submitting, onSubmit, onCancel }: CaseFormProps) {
+export function CaseForm({
+  initial,
+  availableLabels = [],
+  availableSharedStepSets = [],
+  submitting,
+  onSubmit,
+  onCancel,
+}: CaseFormProps) {
+  const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [title, setTitle] = useState(initial?.title ?? '');
   const [template, setTemplate] = useState<CaseTemplate>(initial?.template ?? 'TEXT');
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? 'MEDIUM');
@@ -50,6 +64,9 @@ export function CaseForm({ initial, availableLabels = [], submitting, onSubmit, 
   const [estimate, setEstimate] = useState(initial?.estimate ?? '');
   const [referenceLink, setReferenceLink] = useState(initial?.referenceLink ?? '');
   const [labelIds, setLabelIds] = useState<string[]>(initial?.labels.map((l) => l.id) ?? []);
+  const [sharedStepSetIds, setSharedStepSetIds] = useState<string[]>(initial?.sharedSteps.map((s) => s.id) ?? []);
+  const [promoteName, setPromoteName] = useState('');
+  const [showPromote, setShowPromote] = useState(false);
 
   function toggleLabel(id: string) {
     setLabelIds((prev) => {
@@ -58,6 +75,28 @@ export function CaseForm({ initial, availableLabels = [], submitting, onSubmit, 
       return [...prev, id];
     });
   }
+
+  function toggleSharedStepSet(id: string) {
+    setSharedStepSetIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
+  }
+
+  // A side-action separate from the form's own save flow — it mutates the case immediately
+  // (clearing its literal steps server-side and linking the new set) rather than going through
+  // onSubmit, so it needs its own mutation here instead of assembling into CaseInput.
+  const promoteSteps = useMutation({
+    mutationFn: () => sharedStepsApi.promoteCaseSteps(initial!.id, promoteName),
+    onSuccess: (res) => {
+      setStepsText('');
+      setSharedStepSetIds((prev) => [...prev, res.sharedStepSet.id]);
+      setShowPromote(false);
+      setPromoteName('');
+      queryClient.invalidateQueries({
+        predicate: (q) => q.queryKey.some((k) => k === 'cases' || k === 'shared-step-sets'),
+      });
+      showToast(`"${res.sharedStepSet.name}" created from this case's steps.`);
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to promote steps', 'error'),
+  });
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -79,6 +118,7 @@ export function CaseForm({ initial, availableLabels = [], submitting, onSubmit, 
       estimate: estimate || undefined,
       referenceLink: referenceLink || undefined,
       labelIds,
+      sharedStepSetIds,
     });
   }
 
@@ -155,10 +195,67 @@ export function CaseForm({ initial, availableLabels = [], submitting, onSubmit, 
             />
           </Field>
           {template === 'STEPS' ? (
-            <Field>
-              <Label htmlFor="case-steps">Steps (one per line — "step | expected result")</Label>
-              <Textarea id="case-steps" rows={4} value={stepsText} onChange={(e) => setStepsText(e.target.value)} />
-            </Field>
+            <>
+              <Field>
+                <Label htmlFor="case-steps">Steps (one per line — "step | expected result")</Label>
+                <Textarea id="case-steps" rows={4} value={stepsText} onChange={(e) => setStepsText(e.target.value)} />
+              </Field>
+              {initial && stepsText.trim() && (
+                <Field>
+                  {showPromote ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        autoFocus
+                        placeholder="Shared step set name"
+                        value={promoteName}
+                        onChange={(e) => setPromoteName(e.target.value)}
+                        className="py-1 text-sm"
+                      />
+                      <button
+                        type="button"
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                        disabled={!promoteName || promoteSteps.isPending}
+                        onClick={() => promoteSteps.mutate()}
+                      >
+                        {promoteSteps.isPending ? 'Promoting…' : 'Create'}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
+                        onClick={() => setShowPromote(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                      onClick={() => setShowPromote(true)}
+                    >
+                      Promote these steps to a reusable shared step set
+                    </button>
+                  )}
+                </Field>
+              )}
+              {availableSharedStepSets.length > 0 && (
+                <Field>
+                  <Label>Shared step sets (appended after the steps above)</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {availableSharedStepSets.map((s) => (
+                      <label key={s.id} className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={sharedStepSetIds.includes(s.id)}
+                          onChange={() => toggleSharedStepSet(s.id)}
+                        />
+                        {s.name}
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+              )}
+            </>
           ) : (
             <Field>
               <Label htmlFor="case-steps">Steps</Label>

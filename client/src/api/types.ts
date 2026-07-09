@@ -59,6 +59,22 @@ export interface Label {
   createdAt: string;
 }
 
+export interface SharedStepSet {
+  id: string;
+  projectId: string;
+  name: string;
+  steps: CaseStep[];
+  caseCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResolvedSharedSteps {
+  id: string;
+  name: string;
+  steps: CaseStep[];
+}
+
 export interface TestCase {
   id: string;
   suiteId: string;
@@ -76,6 +92,7 @@ export interface TestCase {
   referenceLink: string | null;
   isDeleted: boolean;
   labels: Label[];
+  sharedSteps: ResolvedSharedSteps[];
   createdAt: string;
   updatedAt: string;
 }
