@@ -4,7 +4,7 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
-import { createCaseSchema, updateCaseSchema } from './schema';
+import { bulkRestoreCasesSchema, createCaseSchema, updateCaseSchema } from './schema';
 import { serializeSteps, toPublicCase } from './serialize';
 import { buildSectionNameMap, casesToCsv, parseCasesCsv } from './csv';
 import { BadRequestError } from '../../lib/errors';
@@ -18,11 +18,11 @@ casesBySuiteRouter.use(requireAuth);
 casesBySuiteRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { sectionId, priority, type } = req.query;
+    const { sectionId, priority, type, deleted } = req.query;
     const cases = await prisma.testCase.findMany({
       where: {
         suiteId: req.params.suiteId,
-        isDeleted: false,
+        isDeleted: deleted === 'true',
         ...(typeof sectionId === 'string' ? { sectionId } : {}),
         ...(typeof priority === 'string' ? { priority } : {}),
         ...(typeof type === 'string' ? { type } : {}),
@@ -107,8 +107,9 @@ casesBySectionRouter.use(requireAuth);
 casesBySectionRouter.get(
   '/',
   asyncHandler(async (req, res) => {
+    const { deleted } = req.query;
     const cases = await prisma.testCase.findMany({
-      where: { sectionId: req.params.sectionId, isDeleted: false },
+      where: { sectionId: req.params.sectionId, isDeleted: deleted === 'true' },
       orderBy: { orderIndex: 'asc' },
     });
     res.json({ cases: cases.map(toPublicCase) });
@@ -166,6 +167,43 @@ casesRouter.delete(
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
     await prisma.testCase.update({ where: { id: req.params.id }, data: { isDeleted: true } });
+    res.status(204).send();
+  }),
+);
+
+casesRouter.post(
+  '/:id/restore',
+  requireRole('ADMIN', 'LEAD'),
+  asyncHandler(async (req, res) => {
+    const testCase = await prisma.testCase.update({ where: { id: req.params.id }, data: { isDeleted: false } });
+    res.json({ case: toPublicCase(testCase) });
+  }),
+);
+
+casesRouter.post(
+  '/bulk-restore',
+  requireRole('ADMIN', 'LEAD'),
+  asyncHandler(async (req, res) => {
+    const body = bulkRestoreCasesSchema.parse(req.body);
+    const { count } = await prisma.testCase.updateMany({
+      where: { id: { in: body.caseIds }, isDeleted: true },
+      data: { isDeleted: false },
+    });
+    res.json({ restored: count });
+  }),
+);
+
+// Separate, explicit action from the soft-delete above — matches real TestRail's split between
+// "mark as deleted" (recoverable) and "permanently delete" (immediate, unrecoverable). Only
+// reachable on an already soft-deleted case, so it can't be used to skip the recovery window.
+casesRouter.delete(
+  '/:id/permanent',
+  requireRole('ADMIN', 'LEAD'),
+  asyncHandler(async (req, res) => {
+    const testCase = await prisma.testCase.findUnique({ where: { id: req.params.id } });
+    if (!testCase) throw new NotFoundError('Test case');
+    if (!testCase.isDeleted) throw new BadRequestError('Case must be soft-deleted before it can be permanently deleted');
+    await prisma.testCase.delete({ where: { id: req.params.id } });
     res.status(204).send();
   }),
 );

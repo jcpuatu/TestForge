@@ -21,3 +21,7 @@ export const createCaseSchema = z.object({
 export const updateCaseSchema = createCaseSchema.partial().extend({
   sectionId: z.string().nullable().optional(),
 });
+
+export const bulkRestoreCasesSchema = z.object({
+  caseIds: z.array(z.string()).min(1).max(500),
+});

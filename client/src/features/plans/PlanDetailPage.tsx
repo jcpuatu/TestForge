@@ -1,24 +1,31 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Pencil, Trash2 } from 'lucide-react';
 import * as plansApi from '../../api/plans';
 import * as suitesApi from '../../api/suites';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
 import { Badge } from '../../components/Badge';
 import { Field, Input, Label, Select } from '../../components/Input';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { ApiError } from '../../lib/apiClient';
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canManage = user?.role === 'ADMIN' || user?.role === 'LEAD';
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [suiteId, setSuiteId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const planQuery = useQuery({ queryKey: ['plans', planId], queryFn: () => plansApi.getPlan(planId!), enabled: !!planId });
   const suitesQuery = useQuery({
@@ -39,6 +46,25 @@ export function PlanDetailPage() {
     onError: (err) => setError(err instanceof ApiError ? err.message : 'Failed to add run'),
   });
 
+  const updatePlan = useMutation({
+    mutationFn: (newName: string) => plansApi.updatePlan(planId!, { name: newName }),
+    onSuccess: () => {
+      setEditingName(null);
+      queryClient.invalidateQueries({ queryKey: ['plans', planId] });
+      showToast('Plan renamed.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rename plan', 'error'),
+  });
+
+  const deletePlan = useMutation({
+    mutationFn: () => plansApi.deletePlan(planId!),
+    onSuccess: () => {
+      showToast('Plan deleted.');
+      navigate(`/projects/${planQuery.data!.plan.projectId}/plans`);
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to delete plan', 'error'),
+  });
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     addRun.mutate();
@@ -52,7 +78,51 @@ export function PlanDetailPage() {
       <Link to={`/projects/${plan.projectId}/plans`} className="mb-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
         ← Back to plans
       </Link>
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{plan.name}</h1>
+      {editingName !== null ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            updatePlan.mutate(editingName);
+          }}
+          className="mb-1 flex items-center gap-2"
+        >
+          <Input
+            autoFocus
+            aria-label="Plan name"
+            value={editingName}
+            onChange={(e) => setEditingName(e.target.value)}
+            className="text-2xl font-semibold"
+          />
+          <Button type="submit" disabled={updatePlan.isPending}>
+            Save
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => setEditingName(null)}>
+            Cancel
+          </Button>
+        </form>
+      ) : (
+        <div className="group mb-1 flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{plan.name}</h1>
+          {canManage && (
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+              <button
+                onClick={() => setEditingName(plan.name)}
+                aria-label="Rename plan"
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setDeleteOpen(true)}
+                aria-label="Delete plan"
+                className="rounded p-1 text-slate-400 hover:bg-red-100 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-900/50 dark:hover:text-red-400"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {plan.milestone && <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Milestone: {plan.milestone.name}</p>}
 
       {canManage && (
@@ -105,6 +175,21 @@ export function PlanDetailPage() {
         ))}
         {plan.runs.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No runs in this plan yet.</p>}
       </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => deletePlan.mutate()}
+        title={`Delete "${plan.name}"?`}
+        confirmLabel="Delete plan"
+        confirming={deletePlan.isPending}
+        message={
+          <>
+            This deletes the plan. Its <strong>{plan.runs.length}</strong> run(s) will remain but will no longer be grouped
+            under this plan.
+          </>
+        }
+      />
     </div>
   );
 }

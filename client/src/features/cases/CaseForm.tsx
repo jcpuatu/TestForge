@@ -31,6 +31,8 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
   const [preconditions, setPreconditions] = useState(initial?.preconditions ?? '');
   const [stepsText, setStepsText] = useState(stepsToText(initial?.steps));
   const [expectedResult, setExpectedResult] = useState(initial?.expectedResult ?? '');
+  const [estimate, setEstimate] = useState(initial?.estimate ?? '');
+  const [referenceLink, setReferenceLink] = useState(initial?.referenceLink ?? '');
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -41,6 +43,8 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
       preconditions: preconditions || undefined,
       steps: textToSteps(stepsText),
       expectedResult: expectedResult || undefined,
+      estimate: estimate || undefined,
+      referenceLink: referenceLink || undefined,
     });
   }
 
@@ -94,6 +98,16 @@ export function CaseForm({ initial, submitting, onSubmit, onCancel }: CaseFormPr
           onChange={(e) => setExpectedResult(e.target.value)}
         />
       </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field>
+          <Label htmlFor="case-estimate">Estimate</Label>
+          <Input id="case-estimate" placeholder="e.g. 10s, 2m, 1h" value={estimate} onChange={(e) => setEstimate(e.target.value)} />
+        </Field>
+        <Field>
+          <Label htmlFor="case-reference">References</Label>
+          <Input id="case-reference" placeholder="REQ-1, REQ-2" value={referenceLink} onChange={(e) => setReferenceLink(e.target.value)} />
+        </Field>
+      </div>
       <div className="flex gap-2">
         <Button type="submit" disabled={submitting}>
           {submitting ? 'Saving…' : 'Save'}

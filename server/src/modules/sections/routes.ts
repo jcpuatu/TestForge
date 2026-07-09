@@ -5,6 +5,7 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
 import { createSectionSchema, updateSectionSchema } from './schema';
+import { collectSectionSubtree } from './service';
 
 // Mounted at /api/v1/suites/:suiteId/sections
 export const sectionsNestedRouter = Router({ mergeParams: true });
@@ -45,6 +46,20 @@ sectionsRouter.patch(
   }),
 );
 
+// Impact preview for the delete-confirmation UI.
+sectionsRouter.get(
+  '/:id/delete-impact',
+  asyncHandler(async (req, res) => {
+    const section = await prisma.section.findUnique({ where: { id: req.params.id } });
+    if (!section) throw new NotFoundError('Section');
+
+    const subtreeIds = await collectSectionSubtree(section.id);
+    const caseCount = await prisma.testCase.count({ where: { sectionId: { in: subtreeIds }, isDeleted: false } });
+
+    res.json({ caseCount, subsectionCount: subtreeIds.length - 1 });
+  }),
+);
+
 sectionsRouter.delete(
   '/:id',
   requireRole('ADMIN', 'LEAD'),
@@ -52,11 +67,18 @@ sectionsRouter.delete(
     const section = await prisma.section.findUnique({ where: { id: req.params.id } });
     if (!section) throw new NotFoundError('Section');
 
-    await prisma.$transaction([
-      // Reparent children up one level before deleting (self-relation is onDelete: Restrict).
-      prisma.section.updateMany({ where: { parentId: section.id }, data: { parentId: section.parentId } }),
-      prisma.section.delete({ where: { id: section.id } }),
-    ]);
+    // Matches real TestRail exactly: deleting a section permanently (hard) deletes every
+    // subsection and every test case within them — explicitly irreversible, unlike the
+    // single-case soft-delete/restore path. Delete deepest-first so the self-relation's
+    // onDelete: Restrict never blocks a parent delete on a still-present child.
+    const subtreeIds = await collectSectionSubtree(section.id);
+    const deletionOrder = [...subtreeIds].reverse();
+
+    await prisma.testCase.deleteMany({ where: { sectionId: { in: subtreeIds } } });
+    for (const id of deletionOrder) {
+      await prisma.section.delete({ where: { id } });
+    }
+
     res.status(204).send();
   }),
 );

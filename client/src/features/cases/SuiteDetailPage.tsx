@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Pencil, Trash2 } from 'lucide-react';
 import * as suitesApi from '../../api/suites';
 import * as casesApi from '../../api/cases';
 import type { CaseInput } from '../../api/cases';
@@ -9,6 +10,8 @@ import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
 import { Field, Input, Label, Select } from '../../components/Input';
 import { PriorityBadge, Badge } from '../../components/Badge';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { CaseForm } from './CaseForm';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, importCasesCsv } from '../../api/csv';
@@ -33,9 +36,11 @@ function buildIndentedSections(sections: Section[]): Array<Section & { depth: nu
 export function SuiteDetailPage() {
   const { suiteId } = useParams<{ suiteId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canManageStructure = user?.role === 'ADMIN' || user?.role === 'LEAD';
   const canWriteCases = canManageStructure || user?.role === 'TESTER';
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
 
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -47,6 +52,15 @@ export function SuiteDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [csvMessage, setCsvMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [editingSuiteName, setEditingSuiteName] = useState<string | null>(null);
+  const [suiteDeleteOpen, setSuiteDeleteOpen] = useState(false);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editSectionName, setEditSectionName] = useState('');
+  const [sectionDeleteTarget, setSectionDeleteTarget] = useState<Section | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [selectedDeletedIds, setSelectedDeletedIds] = useState<Set<string>>(new Set());
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<TestCase | null>(null);
 
   const suiteQuery = useQuery({
     queryKey: ['suites', suiteId],
@@ -62,8 +76,8 @@ export function SuiteDetailPage() {
   const activeSectionId = selectedSectionId ?? sections[0]?.id ?? null;
 
   const casesQuery = useQuery({
-    queryKey: ['sections', activeSectionId, 'cases'],
-    queryFn: () => casesApi.listCasesBySection(activeSectionId!),
+    queryKey: ['sections', activeSectionId, 'cases', showDeleted],
+    queryFn: () => casesApi.listCasesBySection(activeSectionId!, { deleted: showDeleted }),
     enabled: !!activeSectionId,
   });
 
@@ -77,6 +91,58 @@ export function SuiteDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['suites', suiteId] });
     },
     onError: (err) => setFormError(err instanceof ApiError ? err.message : 'Failed to create section'),
+  });
+
+  const updateSuite = useMutation({
+    mutationFn: (name: string) => suitesApi.updateSuite(suiteId!, { name }),
+    onSuccess: () => {
+      setEditingSuiteName(null);
+      queryClient.invalidateQueries({ queryKey: ['suites', suiteId] });
+      showToast('Suite renamed.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rename suite', 'error'),
+  });
+
+  const suiteDeleteImpactQuery = useQuery({
+    queryKey: ['suites', suiteId, 'delete-impact'],
+    queryFn: () => suitesApi.getSuiteDeleteImpact(suiteId!),
+    enabled: suiteDeleteOpen,
+  });
+
+  const deleteSuite = useMutation({
+    mutationFn: () => suitesApi.deleteSuite(suiteId!),
+    onSuccess: () => {
+      showToast('Suite deleted.');
+      navigate(`/projects/${suiteQuery.data!.suite.projectId}`);
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to delete suite', 'error'),
+  });
+
+  const updateSection = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => suitesApi.updateSection(id, { name }),
+    onSuccess: () => {
+      setEditingSectionId(null);
+      queryClient.invalidateQueries({ queryKey: ['suites', suiteId] });
+      showToast('Section renamed.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rename section', 'error'),
+  });
+
+  const sectionDeleteImpactQuery = useQuery({
+    queryKey: ['sections', sectionDeleteTarget?.id, 'delete-impact'],
+    queryFn: () => suitesApi.getSectionDeleteImpact(sectionDeleteTarget!.id),
+    enabled: !!sectionDeleteTarget,
+  });
+
+  const deleteSection = useMutation({
+    mutationFn: (id: string) => suitesApi.deleteSection(id),
+    onSuccess: () => {
+      if (selectedSectionId === sectionDeleteTarget?.id) setSelectedSectionId(null);
+      setSectionDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['suites', suiteId] });
+      showToast('Section deleted.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to delete section', 'error'),
   });
 
   const createCase = useMutation({
@@ -102,6 +168,35 @@ export function SuiteDetailPage() {
   const deleteCaseMutation = useMutation({
     mutationFn: (id: string) => casesApi.deleteCase(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sections', activeSectionId, 'cases'] }),
+  });
+
+  const restoreCaseMutation = useMutation({
+    mutationFn: (id: string) => casesApi.restoreCase(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections', activeSectionId, 'cases'] });
+      showToast('Test case restored.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to restore case', 'error'),
+  });
+
+  const bulkRestoreMutation = useMutation({
+    mutationFn: () => casesApi.bulkRestoreCases([...selectedDeletedIds]),
+    onSuccess: (data) => {
+      setSelectedDeletedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['sections', activeSectionId, 'cases'] });
+      showToast(`Restored ${data.restored} test case(s).`);
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to restore cases', 'error'),
+  });
+
+  const permanentDeleteMutation = useMutation({
+    mutationFn: (id: string) => casesApi.permanentlyDeleteCase(id),
+    onSuccess: () => {
+      setPermanentDeleteTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['sections', activeSectionId, 'cases'] });
+      showToast('Test case permanently deleted.');
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to permanently delete case', 'error'),
   });
 
   const importCsv = useMutation({
@@ -139,7 +234,51 @@ export function SuiteDetailPage() {
         ← Back to project
       </Link>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{suite.name}</h1>
+        {editingSuiteName !== null ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateSuite.mutate(editingSuiteName);
+            }}
+            className="flex items-center gap-2"
+          >
+            <Input
+              autoFocus
+              aria-label="Suite name"
+              value={editingSuiteName}
+              onChange={(e) => setEditingSuiteName(e.target.value)}
+              className="text-2xl font-semibold"
+            />
+            <Button type="submit" disabled={updateSuite.isPending}>
+              Save
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setEditingSuiteName(null)}>
+              Cancel
+            </Button>
+          </form>
+        ) : (
+          <div className="group flex items-center gap-2">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{suite.name}</h1>
+            {canManageStructure && (
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                <button
+                  onClick={() => setEditingSuiteName(suite.name)}
+                  aria-label="Rename suite"
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setSuiteDeleteOpen(true)}
+                  aria-label="Delete suite"
+                  className="rounded p-1 text-slate-400 hover:bg-red-100 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-900/50 dark:hover:text-red-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-3">
           {csvMessage && <span className="text-xs text-slate-500 dark:text-slate-400">{csvMessage}</span>}
           <button
@@ -197,18 +336,69 @@ export function SuiteDetailPage() {
           )}
 
           <nav className="space-y-0.5">
-            {sections.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setSelectedSectionId(s.id)}
-                style={{ paddingLeft: `${8 + s.depth * 14}px` }}
-                className={`block w-full rounded-md py-1.5 pr-2 text-left text-sm ${
-                  s.id === activeSectionId ? 'bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                {s.name}
-              </button>
-            ))}
+            {sections.map((s) =>
+              editingSectionId === s.id ? (
+                <form
+                  key={s.id}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    updateSection.mutate({ id: s.id, name: editSectionName });
+                  }}
+                  style={{ paddingLeft: `${8 + s.depth * 14}px` }}
+                  className="flex items-center gap-1 py-0.5 pr-2"
+                >
+                  <Input
+                    autoFocus
+                    value={editSectionName}
+                    onChange={(e) => setEditSectionName(e.target.value)}
+                    className="py-0.5 text-sm"
+                  />
+                  <button type="submit" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
+                    onClick={() => setEditingSectionId(null)}
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <div key={s.id} className="group flex items-center rounded-md pr-1">
+                  <button
+                    onClick={() => setSelectedSectionId(s.id)}
+                    style={{ paddingLeft: `${8 + s.depth * 14}px` }}
+                    className={`block flex-1 truncate rounded-md py-1.5 text-left text-sm ${
+                      s.id === activeSectionId ? 'bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                  {canManageStructure && (
+                    <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+                      <button
+                        onClick={() => {
+                          setEditingSectionId(s.id);
+                          setEditSectionName(s.name);
+                        }}
+                        aria-label="Rename section"
+                        className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => setSectionDeleteTarget(s)}
+                        aria-label="Delete section"
+                        className="rounded p-1 text-slate-400 hover:bg-red-100 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-900/50 dark:hover:text-red-400"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ),
+            )}
             {sections.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No sections yet.</p>}
           </nav>
         </aside>
@@ -220,22 +410,37 @@ export function SuiteDetailPage() {
                 <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                   {sections.find((s) => s.id === activeSectionId)?.name}
                 </h2>
-                {canWriteCases && (
-                  <Button
-                    onClick={() => {
-                      setShowCaseForm((v) => !v);
-                      setEditingCase(null);
-                      setFormError(null);
-                    }}
-                  >
-                    + New case
-                  </Button>
-                )}
+                <div className="flex items-center gap-3">
+                  {canManageStructure && (
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <input
+                        type="checkbox"
+                        checked={showDeleted}
+                        onChange={(e) => {
+                          setShowDeleted(e.target.checked);
+                          setSelectedDeletedIds(new Set());
+                        }}
+                      />
+                      Show deleted
+                    </label>
+                  )}
+                  {canWriteCases && !showDeleted && (
+                    <Button
+                      onClick={() => {
+                        setShowCaseForm((v) => !v);
+                        setEditingCase(null);
+                        setFormError(null);
+                      }}
+                    >
+                      + New case
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {formError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 
-              {showCaseForm && (
+              {showCaseForm && !showDeleted && (
                 <div className="mb-4">
                   <CaseForm
                     submitting={createCase.isPending}
@@ -245,10 +450,38 @@ export function SuiteDetailPage() {
                 </div>
               )}
 
+              {showDeleted && selectedDeletedIds.size > 0 && (
+                <div className="mb-3 flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 px-3 py-2">
+                  <span className="text-xs text-slate-600 dark:text-slate-400">{selectedDeletedIds.size} selected</span>
+                  <Button
+                    variant="secondary"
+                    onClick={() => bulkRestoreMutation.mutate()}
+                    disabled={bulkRestoreMutation.isPending}
+                  >
+                    {bulkRestoreMutation.isPending ? 'Restoring…' : 'Restore selected'}
+                  </Button>
+                </div>
+              )}
+
               <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
                 {casesQuery.data?.cases.map((testCase) => (
                   <div key={testCase.id} className="p-3">
                     <div className="flex items-center justify-between">
+                      {showDeleted && (
+                        <input
+                          type="checkbox"
+                          className="mr-2"
+                          checked={selectedDeletedIds.has(testCase.id)}
+                          onChange={(e) => {
+                            setSelectedDeletedIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(testCase.id);
+                              else next.delete(testCase.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      )}
                       <button
                         className="flex-1 text-left"
                         onClick={() => setExpandedCaseId(expandedCaseId === testCase.id ? null : testCase.id)}
@@ -259,27 +492,46 @@ export function SuiteDetailPage() {
                           <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{testCase.title}</span>
                         </div>
                       </button>
-                      {canWriteCases && (
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                            onClick={() => {
-                              setEditingCase(testCase);
-                              setShowCaseForm(false);
-                              setFormError(null);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          {canManageStructure && (
+                      {showDeleted ? (
+                        canManageStructure && (
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                              onClick={() => restoreCaseMutation.mutate(testCase.id)}
+                            >
+                              Restore
+                            </button>
                             <button
                               className="text-xs text-red-600 dark:text-red-400 hover:underline"
-                              onClick={() => deleteCaseMutation.mutate(testCase.id)}
+                              onClick={() => setPermanentDeleteTarget(testCase)}
                             >
-                              Delete
+                              Delete permanently
                             </button>
-                          )}
-                        </div>
+                          </div>
+                        )
+                      ) : (
+                        canWriteCases && (
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                              onClick={() => {
+                                setEditingCase(testCase);
+                                setShowCaseForm(false);
+                                setFormError(null);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            {canManageStructure && (
+                              <button
+                                className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                                onClick={() => deleteCaseMutation.mutate(testCase.id)}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        )
                       )}
                     </div>
 
@@ -320,13 +572,27 @@ export function SuiteDetailPage() {
                               {testCase.expectedResult}
                             </p>
                           )}
+                          {testCase.estimate && (
+                            <p>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">Estimate: </span>
+                              {testCase.estimate}
+                            </p>
+                          )}
+                          {testCase.referenceLink && (
+                            <p>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">References: </span>
+                              {testCase.referenceLink}
+                            </p>
+                          )}
                         </div>
                       )
                     )}
                   </div>
                 ))}
                 {casesQuery.data?.cases.length === 0 && (
-                  <p className="p-3 text-sm text-slate-500 dark:text-slate-400">No test cases in this section yet.</p>
+                  <p className="p-3 text-sm text-slate-500 dark:text-slate-400">
+                    {showDeleted ? 'No deleted test cases in this section.' : 'No test cases in this section yet.'}
+                  </p>
                 )}
               </div>
             </>
@@ -335,6 +601,66 @@ export function SuiteDetailPage() {
           )}
         </section>
       </div>
+
+      <ConfirmDialog
+        open={suiteDeleteOpen}
+        onClose={() => setSuiteDeleteOpen(false)}
+        onConfirm={() => deleteSuite.mutate()}
+        title={`Delete "${suite.name}"?`}
+        confirmLabel="Delete suite"
+        confirming={deleteSuite.isPending}
+        message={
+          suiteDeleteImpactQuery.data ? (
+            <>
+              This permanently deletes <strong>{suiteDeleteImpactQuery.data.caseCount}</strong> test case(s) and{' '}
+              <strong>{suiteDeleteImpactQuery.data.activeRunCount}</strong> active test run(s) with their results.{' '}
+              {suiteDeleteImpactQuery.data.closedRunCount > 0 && (
+                <>
+                  <strong>{suiteDeleteImpactQuery.data.closedRunCount}</strong> closed run(s) will be preserved.{' '}
+                </>
+              )}
+              This cannot be undone.
+            </>
+          ) : (
+            'Loading impact…'
+          )
+        }
+      />
+
+      <ConfirmDialog
+        open={!!sectionDeleteTarget}
+        onClose={() => setSectionDeleteTarget(null)}
+        onConfirm={() => deleteSection.mutate(sectionDeleteTarget!.id)}
+        title={`Delete "${sectionDeleteTarget?.name}"?`}
+        confirmLabel="Delete section"
+        confirming={deleteSection.isPending}
+        message={
+          sectionDeleteImpactQuery.data ? (
+            <>
+              This permanently deletes <strong>{sectionDeleteImpactQuery.data.caseCount}</strong> test case(s)
+              {sectionDeleteImpactQuery.data.subsectionCount > 0 && (
+                <>
+                  {' '}
+                  and <strong>{sectionDeleteImpactQuery.data.subsectionCount}</strong> subsection(s)
+                </>
+              )}
+              . This cannot be undone.
+            </>
+          ) : (
+            'Loading impact…'
+          )
+        }
+      />
+
+      <ConfirmDialog
+        open={!!permanentDeleteTarget}
+        onClose={() => setPermanentDeleteTarget(null)}
+        onConfirm={() => permanentDeleteMutation.mutate(permanentDeleteTarget!.id)}
+        title={`Permanently delete "${permanentDeleteTarget?.title}"?`}
+        confirmLabel="Delete permanently"
+        confirming={permanentDeleteMutation.isPending}
+        message="This immediately and permanently removes the test case. It cannot be restored."
+      />
     </div>
   );
 }

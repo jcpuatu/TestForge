@@ -40,4 +40,23 @@ describe('plans', () => {
     expect(detail.body.plan.runs).toHaveLength(1);
     expect(detail.body.plan.runs[0].name).toBe('Run under plan');
   });
+
+  it('renames a plan, and deleting it unlinks (does not delete) its runs', async () => {
+    const plan = await request(app).post(`/api/v1/projects/${projectId}/plans`).set(auth()).send({ name: 'Old Plan Name' });
+    const planId = plan.body.plan.id;
+
+    const renamed = await request(app).patch(`/api/v1/plans/${planId}`).set(auth()).send({ name: 'New Plan Name' });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.plan.name).toBe('New Plan Name');
+
+    const run = await request(app).post(`/api/v1/plans/${planId}/runs`).set(auth()).send({ name: 'Run in plan', suiteId });
+    const runId = run.body.run.id;
+
+    const del = await request(app).delete(`/api/v1/plans/${planId}`).set(auth());
+    expect(del.status).toBe(204);
+
+    const dbRun = await prisma.testRun.findUnique({ where: { id: runId } });
+    expect(dbRun).not.toBeNull();
+    expect(dbRun?.planId).toBeNull();
+  });
 });

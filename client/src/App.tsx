@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { queryClient } from './lib/queryClient';
 import { AuthProvider } from './features/auth/AuthContext';
 import { ThemeProvider } from './features/theme/ThemeContext';
+import { ToastProvider } from './components/Toast';
 import { LoginPage } from './features/auth/LoginPage';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { AppShell } from './layouts/AppShell';
@@ -26,6 +27,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+      <ToastProvider>
       <BrowserRouter>
         <AuthProvider>
           <Routes>
@@ -124,6 +126,7 @@ function App() {
           </Routes>
         </AuthProvider>
       </BrowserRouter>
+      </ToastProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

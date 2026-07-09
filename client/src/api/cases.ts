@@ -16,8 +16,9 @@ export function listCasesBySuite(suiteId: string) {
   return apiFetch<{ cases: TestCase[] }>(`/suites/${suiteId}/cases`);
 }
 
-export function listCasesBySection(sectionId: string) {
-  return apiFetch<{ cases: TestCase[] }>(`/sections/${sectionId}/cases`);
+export function listCasesBySection(sectionId: string, opts?: { deleted?: boolean }) {
+  const query = opts?.deleted ? '?deleted=true' : '';
+  return apiFetch<{ cases: TestCase[] }>(`/sections/${sectionId}/cases${query}`);
 }
 
 export function getCase(id: string) {
@@ -34,4 +35,16 @@ export function updateCase(id: string, input: Partial<CaseInput>) {
 
 export function deleteCase(id: string) {
   return apiFetch<void>(`/cases/${id}`, { method: 'DELETE' });
+}
+
+export function restoreCase(id: string) {
+  return apiFetch<{ case: TestCase }>(`/cases/${id}/restore`, { method: 'POST' });
+}
+
+export function bulkRestoreCases(caseIds: string[]) {
+  return apiFetch<{ restored: number }>('/cases/bulk-restore', { method: 'POST', body: { caseIds } });
+}
+
+export function permanentlyDeleteCase(id: string) {
+  return apiFetch<void>(`/cases/${id}/permanent`, { method: 'DELETE' });
 }
