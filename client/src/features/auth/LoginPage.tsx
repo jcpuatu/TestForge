@@ -4,7 +4,6 @@ import { useAuth } from './AuthContext';
 import { ApiError } from '../../lib/apiClient';
 import { Button } from '../../components/Button';
 import { Field, Input, Label } from '../../components/Input';
-import { Logo } from '../../components/Logo';
 
 export function LoginPage() {
   const { status, login } = useAuth();
@@ -37,7 +36,7 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-900">
       <div className="w-full max-w-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 shadow-sm">
-        <Logo className="mb-1" iconClassName="h-7 w-7" />
+        <h1 className="mb-1 text-xl font-semibold text-slate-900 dark:text-slate-100">TestForge</h1>
         <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Sign in to manage test cases and runs.</p>
         <form onSubmit={handleSubmit}>
           <Field>
