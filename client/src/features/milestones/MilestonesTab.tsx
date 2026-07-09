@@ -5,13 +5,50 @@ import * as milestonesApi from '../../api/milestones';
 import type { Milestone } from '../../api/milestones';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
-import { Field, Input, Label } from '../../components/Input';
+import { Badge } from '../../components/Badge';
+import { Field, Input, Label, Select } from '../../components/Input';
 import { ApiError } from '../../lib/apiClient';
 
 function toDateInput(iso: string | null): string {
   return iso ? iso.slice(0, 10) : '';
 }
 
+type MilestoneStatus = 'Upcoming' | 'Open' | 'Completed';
+
+// Derived, not stored — a milestone with no startDate (or one already in the past) is Open
+// immediately; a future startDate makes it Upcoming until that date arrives or "Start Milestone"
+// backdates it. Matches real TestRail's own Upcoming/Open split.
+function computeStatus(m: Milestone): MilestoneStatus {
+  if (m.isCompleted) return 'Completed';
+  if (m.startDate && new Date(m.startDate) > new Date()) return 'Upcoming';
+  return 'Open';
+}
+
+const STATUS_CLASSES: Record<MilestoneStatus, string> = {
+  Upcoming: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400',
+  Open: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300',
+  Completed: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400',
+};
+
+function buildTree(milestones: Milestone[]): Array<Milestone & { depth: number }> {
+  const byParent = new Map<string | null, Milestone[]>();
+  for (const m of milestones) {
+    const key = m.parentId;
+    byParent.set(key, [...(byParent.get(key) ?? []), m]);
+  }
+  const result: Array<Milestone & { depth: number }> = [];
+  function walk(parentId: string | null, depth: number) {
+    for (const m of byParent.get(parentId) ?? []) {
+      result.push({ ...m, depth });
+      walk(m.id, depth + 1);
+    }
+  }
+  walk(null, 0);
+  return result;
+}
+
+// Parent reassignment isn't exposed here, only at creation — same deliberate scope reduction as
+// Section's own drag-to-reparent-only-not-via-edit-form precedent.
 function MilestoneEditForm({ milestone, onDone }: { milestone: Milestone; onDone: () => void }) {
   const { projectId } = useParams<{ projectId: string }>();
   const queryClient = useQueryClient();
@@ -73,6 +110,7 @@ export function MilestonesTab() {
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [references, setReferences] = useState('');
+  const [parentId, setParentId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -80,6 +118,7 @@ export function MilestonesTab() {
     queryKey: ['projects', projectId, 'milestones'],
     queryFn: () => milestonesApi.listMilestones(projectId!),
   });
+  const milestones = milestonesQuery.data?.milestones ?? [];
 
   const createMilestone = useMutation({
     mutationFn: () =>
@@ -88,12 +127,14 @@ export function MilestonesTab() {
         startDate: startDate ? new Date(startDate).toISOString() : undefined,
         dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         references: references || undefined,
+        parentId: parentId || undefined,
       }),
     onSuccess: () => {
       setName('');
       setStartDate('');
       setDueDate('');
       setReferences('');
+      setParentId('');
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'milestones'] });
     },
@@ -102,6 +143,11 @@ export function MilestonesTab() {
 
   const toggleComplete = useMutation({
     mutationFn: ({ id, isCompleted }: { id: string; isCompleted: boolean }) => milestonesApi.updateMilestone(id, { isCompleted }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'milestones'] }),
+  });
+
+  const startMilestone = useMutation({
+    mutationFn: (id: string) => milestonesApi.updateMilestone(id, { startDate: new Date().toISOString() }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'milestones'] }),
   });
 
@@ -115,15 +161,30 @@ export function MilestonesTab() {
     createMilestone.mutate();
   }
 
+  const tree = buildTree(milestones);
+
   return (
     <div>
       <h1 className="mb-4 text-xl font-semibold text-slate-900 dark:text-slate-100">Milestones</h1>
       {canManage && (
-        <form onSubmit={handleSubmit} className="mb-6 flex items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <form onSubmit={handleSubmit} className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <div className="flex-1">
             <Field>
               <Label htmlFor="milestone-name">Name</Label>
               <Input id="milestone-name" required value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+          </div>
+          <div>
+            <Field>
+              <Label htmlFor="milestone-parent">Parent (optional)</Label>
+              <Select id="milestone-parent" value={parentId} onChange={(e) => setParentId(e.target.value)}>
+                <option value="">(none — top level)</option>
+                {milestones.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
             </Field>
           </div>
           <div>
@@ -152,41 +213,60 @@ export function MilestonesTab() {
       {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="space-y-2">
-        {milestonesQuery.data?.milestones.map((m) => (
-          <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
-            {editingId === m.id ? (
-              <MilestoneEditForm milestone={m} onDone={() => setEditingId(null)} />
-            ) : (
-              <>
-                <div>
-                  <h3 className={`font-medium ${m.isCompleted ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-900 dark:text-slate-100'}`}>{m.name}</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {m.startDate && <>Starts {new Date(m.startDate).toLocaleDateString()} </>}
-                    {m.dueDate && <>· Due {new Date(m.dueDate).toLocaleDateString()}</>}
-                  </p>
-                  {m.references && <p className="text-xs text-slate-400 dark:text-slate-500">Refs: {m.references}</p>}
-                </div>
-                {canManage && (
-                  <div className="flex gap-2">
-                    <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setEditingId(m.id)}>
-                      Edit
-                    </button>
-                    <button
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                      onClick={() => toggleComplete.mutate({ id: m.id, isCompleted: !m.isCompleted })}
-                    >
-                      {m.isCompleted ? 'Reopen' : 'Mark complete'}
-                    </button>
-                    <button className="text-xs text-red-600 dark:text-red-400 hover:underline" onClick={() => deleteMilestone.mutate(m.id)}>
-                      Delete
-                    </button>
+        {tree.map((m) => {
+          const status = computeStatus(m);
+          return (
+            <div
+              key={m.id}
+              style={{ marginLeft: m.depth * 24 }}
+              className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4"
+            >
+              {editingId === m.id ? (
+                <MilestoneEditForm milestone={m} onDone={() => setEditingId(null)} />
+              ) : (
+                <>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className={`font-medium ${m.isCompleted ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-900 dark:text-slate-100'}`}>{m.name}</h3>
+                      <Badge className={STATUS_CLASSES[status]}>{status}</Badge>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {m.startDate && <>Starts {new Date(m.startDate).toLocaleDateString()} </>}
+                      {m.dueDate && <>· Due {new Date(m.dueDate).toLocaleDateString()}</>}
+                    </p>
+                    {m.references && <p className="text-xs text-slate-400 dark:text-slate-500">Refs: {m.references}</p>}
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        ))}
-        {milestonesQuery.data?.milestones.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No milestones yet.</p>}
+                  {canManage && (
+                    <div className="flex gap-2">
+                      {status === 'Upcoming' && (
+                        <button
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                          onClick={() => startMilestone.mutate(m.id)}
+                          disabled={startMilestone.isPending}
+                        >
+                          Start milestone
+                        </button>
+                      )}
+                      <button className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setEditingId(m.id)}>
+                        Edit
+                      </button>
+                      <button
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                        onClick={() => toggleComplete.mutate({ id: m.id, isCompleted: !m.isCompleted })}
+                      >
+                        {m.isCompleted ? 'Reopen' : 'Mark complete'}
+                      </button>
+                      <button className="text-xs text-red-600 dark:text-red-400 hover:underline" onClick={() => deleteMilestone.mutate(m.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
+        {milestones.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No milestones yet.</p>}
       </div>
     </div>
   );
