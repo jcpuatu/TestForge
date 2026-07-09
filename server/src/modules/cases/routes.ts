@@ -7,6 +7,7 @@ import { NotFoundError } from '../../lib/errors';
 import { bulkRestoreCasesSchema, createCaseSchema, updateCaseSchema } from './schema';
 import { serializeSteps, toPublicCase } from './serialize';
 import { buildSectionNameMap, casesToCsv, parseCasesCsv } from './csv';
+import { buildCaseListQuery, buildCaseSort } from './service';
 import { BadRequestError } from '../../lib/errors';
 
 const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
@@ -18,17 +19,8 @@ casesBySuiteRouter.use(requireAuth);
 casesBySuiteRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { sectionId, priority, type, deleted } = req.query;
-    const cases = await prisma.testCase.findMany({
-      where: {
-        suiteId: req.params.suiteId,
-        isDeleted: deleted === 'true',
-        ...(typeof sectionId === 'string' ? { sectionId } : {}),
-        ...(typeof priority === 'string' ? { priority } : {}),
-        ...(typeof type === 'string' ? { type } : {}),
-      },
-      orderBy: { orderIndex: 'asc' },
-    });
+    const { where, orderBy } = buildCaseListQuery(req.params.suiteId, req.query as Record<string, unknown>);
+    const cases = await prisma.testCase.findMany({ where, orderBy });
     res.json({ cases: cases.map(toPublicCase) });
   }),
 );
@@ -110,7 +102,7 @@ casesBySectionRouter.get(
     const { deleted } = req.query;
     const cases = await prisma.testCase.findMany({
       where: { sectionId: req.params.sectionId, isDeleted: deleted === 'true' },
-      orderBy: { orderIndex: 'asc' },
+      orderBy: buildCaseSort(req.query as Record<string, unknown>),
     });
     res.json({ cases: cases.map(toPublicCase) });
   }),

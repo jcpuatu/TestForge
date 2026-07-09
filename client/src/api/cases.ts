@@ -12,13 +12,53 @@ export interface CaseInput {
   referenceLink?: string;
 }
 
-export function listCasesBySuite(suiteId: string) {
-  return apiFetch<{ cases: TestCase[] }>(`/suites/${suiteId}/cases`);
+export interface CaseFilter {
+  sectionIds?: string[];
+  priorities?: Priority[];
+  types?: CaseType[];
+  createdByIds?: string[];
+  createdAfter?: string;
+  createdBefore?: string;
+  match?: 'all' | 'any';
+  sortBy?: 'title' | 'priority' | 'type' | 'createdAt' | 'orderIndex';
+  sortDir?: 'asc' | 'desc';
+  deleted?: boolean;
 }
 
-export function listCasesBySection(sectionId: string, opts?: { deleted?: boolean }) {
-  const query = opts?.deleted ? '?deleted=true' : '';
-  return apiFetch<{ cases: TestCase[] }>(`/sections/${sectionId}/cases${query}`);
+export function isFilterActive(filter: CaseFilter): boolean {
+  return !!(
+    filter.sectionIds?.length ||
+    filter.priorities?.length ||
+    filter.types?.length ||
+    filter.createdByIds?.length ||
+    filter.createdAfter ||
+    filter.createdBefore
+  );
+}
+
+export function listCasesBySuite(suiteId: string, filter?: CaseFilter) {
+  const params = new URLSearchParams();
+  if (filter?.sectionIds?.length) params.set('sectionIds', filter.sectionIds.join(','));
+  if (filter?.priorities?.length) params.set('priorities', filter.priorities.join(','));
+  if (filter?.types?.length) params.set('types', filter.types.join(','));
+  if (filter?.createdByIds?.length) params.set('createdByIds', filter.createdByIds.join(','));
+  if (filter?.createdAfter) params.set('createdAfter', filter.createdAfter);
+  if (filter?.createdBefore) params.set('createdBefore', filter.createdBefore);
+  if (filter?.match) params.set('match', filter.match);
+  if (filter?.sortBy) params.set('sortBy', filter.sortBy);
+  if (filter?.sortDir) params.set('sortDir', filter.sortDir);
+  if (filter?.deleted) params.set('deleted', 'true');
+  const query = params.toString();
+  return apiFetch<{ cases: TestCase[] }>(`/suites/${suiteId}/cases${query ? `?${query}` : ''}`);
+}
+
+export function listCasesBySection(sectionId: string, opts?: { deleted?: boolean; sortBy?: CaseFilter['sortBy']; sortDir?: CaseFilter['sortDir'] }) {
+  const params = new URLSearchParams();
+  if (opts?.deleted) params.set('deleted', 'true');
+  if (opts?.sortBy) params.set('sortBy', opts.sortBy);
+  if (opts?.sortDir) params.set('sortDir', opts.sortDir);
+  const query = params.toString();
+  return apiFetch<{ cases: TestCase[] }>(`/sections/${sectionId}/cases${query ? `?${query}` : ''}`);
 }
 
 export function getCase(id: string) {

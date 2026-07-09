@@ -4,7 +4,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import * as suitesApi from '../../api/suites';
 import * as casesApi from '../../api/cases';
-import type { CaseInput } from '../../api/cases';
+import type { CaseFilter, CaseInput } from '../../api/cases';
+import { isFilterActive } from '../../api/cases';
+import * as usersApi from '../../api/users';
 import type { Section, TestCase } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
@@ -13,6 +15,7 @@ import { PriorityBadge, Badge } from '../../components/Badge';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { CaseForm } from './CaseForm';
+import { CaseFilterBar } from './CaseFilterBar';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, importCasesCsv } from '../../api/csv';
 
@@ -61,6 +64,7 @@ export function SuiteDetailPage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [selectedDeletedIds, setSelectedDeletedIds] = useState<Set<string>>(new Set());
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<TestCase | null>(null);
+  const [caseFilter, setCaseFilter] = useState<CaseFilter>({});
 
   const suiteQuery = useQuery({
     queryKey: ['suites', suiteId],
@@ -68,18 +72,31 @@ export function SuiteDetailPage() {
     enabled: !!suiteId,
   });
 
+  const usersQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
+
   const sections = useMemo(
     () => (suiteQuery.data ? buildIndentedSections(suiteQuery.data.suite.sections) : []),
     [suiteQuery.data],
   );
+  const sectionNameById = useMemo(() => new Map(sections.map((s) => [s.id, s.name])), [sections]);
+  const filtering = isFilterActive(caseFilter);
 
   const activeSectionId = selectedSectionId ?? sections[0]?.id ?? null;
 
-  const casesQuery = useQuery({
-    queryKey: ['sections', activeSectionId, 'cases', showDeleted],
-    queryFn: () => casesApi.listCasesBySection(activeSectionId!, { deleted: showDeleted }),
-    enabled: !!activeSectionId,
+  const sectionCasesQuery = useQuery({
+    queryKey: ['sections', activeSectionId, 'cases', showDeleted, caseFilter.sortBy, caseFilter.sortDir],
+    queryFn: () =>
+      casesApi.listCasesBySection(activeSectionId!, { deleted: showDeleted, sortBy: caseFilter.sortBy, sortDir: caseFilter.sortDir }),
+    enabled: !!activeSectionId && !filtering,
   });
+
+  const filteredCasesQuery = useQuery({
+    queryKey: ['suites', suiteId, 'cases', 'filtered', caseFilter, showDeleted],
+    queryFn: () => casesApi.listCasesBySuite(suiteId!, { ...caseFilter, deleted: showDeleted }),
+    enabled: !!suiteId && filtering,
+  });
+
+  const casesQuery = filtering ? filteredCasesQuery : sectionCasesQuery;
 
   const createSection = useMutation({
     mutationFn: () =>
@@ -408,7 +425,7 @@ export function SuiteDetailPage() {
             <>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  {sections.find((s) => s.id === activeSectionId)?.name}
+                  {filtering ? 'All test cases (filtered)' : sections.find((s) => s.id === activeSectionId)?.name}
                 </h2>
                 <div className="flex items-center gap-3">
                   {canManageStructure && (
@@ -424,7 +441,7 @@ export function SuiteDetailPage() {
                       Show deleted
                     </label>
                   )}
-                  {canWriteCases && !showDeleted && (
+                  {canWriteCases && !showDeleted && !filtering && (
                     <Button
                       onClick={() => {
                         setShowCaseForm((v) => !v);
@@ -438,9 +455,18 @@ export function SuiteDetailPage() {
                 </div>
               </div>
 
+              <div className="mb-3">
+                <CaseFilterBar
+                  sections={sections}
+                  users={usersQuery.data?.users ?? []}
+                  filter={caseFilter}
+                  onChange={setCaseFilter}
+                />
+              </div>
+
               {formError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 
-              {showCaseForm && !showDeleted && (
+              {showCaseForm && !showDeleted && !filtering && (
                 <div className="mb-4">
                   <CaseForm
                     submitting={createCase.isPending}
@@ -489,6 +515,11 @@ export function SuiteDetailPage() {
                         <div className="flex items-center gap-2">
                           <PriorityBadge priority={testCase.priority} />
                           <Badge>{testCase.type}</Badge>
+                          {filtering && testCase.sectionId && (
+                            <Badge className="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                              {sectionNameById.get(testCase.sectionId) ?? 'Unknown section'}
+                            </Badge>
+                          )}
                           <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{testCase.title}</span>
                         </div>
                       </button>

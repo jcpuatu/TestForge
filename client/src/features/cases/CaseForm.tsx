@@ -5,8 +5,8 @@ import { Button } from '../../components/Button';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { stepsToText, textToSteps } from './stepsText';
 
-const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-const TYPES: CaseType[] = [
+export const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+export const TYPES: CaseType[] = [
   'FUNCTIONAL',
   'SMOKE',
   'REGRESSION',
