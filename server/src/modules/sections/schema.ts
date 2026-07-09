@@ -11,3 +11,8 @@ export const updateSectionSchema = z.object({
   description: z.string().max(2000).optional(),
   orderIndex: z.number().int().optional(),
 });
+
+export const moveSectionSchema = z.object({
+  parentId: z.string().nullable(),
+  orderIndex: z.number().int().min(0),
+});

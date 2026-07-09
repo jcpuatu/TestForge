@@ -44,3 +44,7 @@ export function getSectionDeleteImpact(id: string) {
 export function createSection(suiteId: string, input: { name: string; description?: string; parentId?: string }) {
   return apiFetch<{ section: Section }>(`/suites/${suiteId}/sections`, { method: 'POST', body: input });
 }
+
+export function moveSection(id: string, parentId: string | null, orderIndex: number) {
+  return apiFetch<{ sections: Section[] }>(`/sections/${id}/move`, { method: 'POST', body: { parentId, orderIndex } });
+}

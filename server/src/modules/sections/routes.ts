@@ -4,8 +4,9 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
-import { createSectionSchema, updateSectionSchema } from './schema';
-import { collectSectionSubtree } from './service';
+import { BadRequestError } from '../../lib/errors';
+import { createSectionSchema, moveSectionSchema, updateSectionSchema } from './schema';
+import { collectSectionSubtree, moveSection } from './service';
 
 // Mounted at /api/v1/suites/:suiteId/sections
 export const sectionsNestedRouter = Router({ mergeParams: true });
@@ -43,6 +44,23 @@ sectionsRouter.patch(
     const body = updateSectionSchema.parse(req.body);
     const section = await prisma.section.update({ where: { id: req.params.id }, data: body });
     res.json({ section });
+  }),
+);
+
+sectionsRouter.post(
+  '/:id/move',
+  requireRole('ADMIN', 'LEAD'),
+  asyncHandler(async (req, res) => {
+    const section = await prisma.section.findUnique({ where: { id: req.params.id } });
+    if (!section) throw new NotFoundError('Section');
+    const body = moveSectionSchema.parse(req.body);
+    try {
+      await moveSection(section.id, body.parentId, body.orderIndex);
+    } catch (err) {
+      throw new BadRequestError(err instanceof Error ? err.message : 'Failed to move section');
+    }
+    const sections = await prisma.section.findMany({ where: { suiteId: section.suiteId }, orderBy: { orderIndex: 'asc' } });
+    res.json({ sections });
   }),
 );
 

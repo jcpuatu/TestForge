@@ -20,3 +20,34 @@ export async function collectSectionSubtree(rootId: string): Promise<string[]> {
 
   return all;
 }
+
+// Moves a section to a new parent (or keeps its current one) at a specific position among its
+// new siblings, then re-normalizes every sibling's orderIndex to 0..n-1 in one transaction —
+// avoids the gap/drift that repeated moves would otherwise cause if positions were computed
+// from stale index math instead of a fresh re-sort each time.
+export async function moveSection(sectionId: string, newParentId: string | null, targetIndex: number) {
+  const section = await prisma.section.findUniqueOrThrow({ where: { id: sectionId } });
+
+  if (newParentId) {
+    if (newParentId === sectionId) throw new Error('A section cannot be moved into itself');
+    const subtreeIds = await collectSectionSubtree(sectionId);
+    if (subtreeIds.includes(newParentId)) throw new Error('A section cannot be moved into its own subsection');
+  }
+
+  const siblings = await prisma.section.findMany({
+    where: { suiteId: section.suiteId, parentId: newParentId, id: { not: sectionId } },
+    orderBy: { orderIndex: 'asc' },
+  });
+
+  const reordered = [...siblings];
+  reordered.splice(Math.min(targetIndex, reordered.length), 0, section);
+
+  await prisma.$transaction(
+    reordered.map((s, index) =>
+      prisma.section.update({
+        where: { id: s.id },
+        data: { orderIndex: index, ...(s.id === sectionId ? { parentId: newParentId } : {}) },
+      }),
+    ),
+  );
+}

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Pencil, Trash2 } from 'lucide-react';
+import { GripVertical, Pencil, Trash2 } from 'lucide-react';
+import { DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import * as suitesApi from '../../api/suites';
 import * as casesApi from '../../api/cases';
 import type { CaseFilter, CaseInput } from '../../api/cases';
@@ -18,6 +19,7 @@ import { useToast } from '../../components/Toast';
 import { CaseForm } from './CaseForm';
 import { CaseFilterBar } from './CaseFilterBar';
 import { BulkCaseActionsBar } from './BulkCaseActionsBar';
+import { SectionTree } from './SectionTree';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, importCasesCsv } from '../../api/csv';
 
@@ -36,6 +38,26 @@ function buildIndentedSections(sections: Section[]): Array<Section & { depth: nu
   }
   walk(null, 0);
   return result;
+}
+
+// A dedicated drag handle (rather than making the whole row draggable) so it doesn't fight
+// with the row's own click-to-expand button or checkbox — useDraggable must be called from a
+// component of its own since case rows are rendered via .map(), and hooks can't be called
+// conditionally/in a loop within the parent's render function.
+function CaseDragHandle({ caseId, disabled }: { caseId: string; disabled: boolean }) {
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: `case:${caseId}`, disabled });
+  if (disabled) return <span className="mr-1 w-3.5 shrink-0" />;
+  return (
+    <button
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      aria-label="Drag to move"
+      className="mr-1 shrink-0 cursor-grab touch-none text-slate-300 hover:text-slate-500 active:cursor-grabbing dark:text-slate-600 dark:hover:text-slate-400"
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </button>
+  );
 }
 
 export function SuiteDetailPage() {
@@ -161,6 +183,64 @@ export function SuiteDetailPage() {
     },
     onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rename section', 'error'),
   });
+
+  const moveSectionMutation = useMutation({
+    mutationFn: ({ id, parentId, orderIndex }: { id: string; parentId: string | null; orderIndex: number }) =>
+      suitesApi.moveSection(id, parentId, orderIndex),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['suites', suiteId] }),
+    onError: (err) => {
+      showToast(err instanceof ApiError ? err.message : 'Failed to reorder section', 'error');
+      queryClient.invalidateQueries({ queryKey: ['suites', suiteId] });
+    },
+  });
+
+  const moveCaseMutation = useMutation({
+    mutationFn: ({ caseIds, sectionId }: { caseIds: string[]; sectionId: string }) => casesApi.bulkUpdateCases(caseIds, { sectionId }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+      queryClient.invalidateQueries({ queryKey: ['suites', suiteId, 'cases'] });
+      setSelectedCaseIds(new Set());
+      showToast(`Moved ${data.updated} test case(s).`);
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to move test case(s)', 'error'),
+  });
+
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [draggingCaseId, setDraggingCaseId] = useState<string | null>(null);
+
+  function handleDragStart(event: DragStartEvent) {
+    const id = String(event.active.id);
+    if (id.startsWith('case:')) setDraggingCaseId(id.slice('case:'.length));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setDraggingCaseId(null);
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    if (activeId.startsWith('case:')) {
+      const draggedCaseId = activeId.slice('case:'.length);
+      // If the dragged case is part of the current multi-select, move the whole selection
+      // together; otherwise just the one case being dragged.
+      const caseIds = selectedCaseIds.has(draggedCaseId) ? [...selectedCaseIds] : [draggedCaseId];
+      moveCaseMutation.mutate({ caseIds, sectionId: overId });
+      return;
+    }
+
+    // Section reorder: only meaningful within the same sibling group (SectionTree gives each
+    // parent group its own SortableContext, so a cross-group drag target won't reach here in
+    // practice — this guard is a belt-and-suspenders check, not the primary mechanism).
+    if (activeId === overId) return;
+    const allSections = suiteQuery.data?.suite.sections ?? [];
+    const dragged = allSections.find((s) => s.id === activeId);
+    const target = allSections.find((s) => s.id === overId);
+    if (!dragged || !target || dragged.parentId !== target.parentId) return;
+    const siblings = allSections.filter((s) => s.parentId === dragged.parentId).sort((a, b) => a.orderIndex - b.orderIndex);
+    const targetIndex = siblings.findIndex((s) => s.id === overId);
+    moveSectionMutation.mutate({ id: dragged.id, parentId: dragged.parentId, orderIndex: targetIndex });
+  }
 
   const sectionDeleteImpactQuery = useQuery({
     queryKey: ['sections', sectionDeleteTarget?.id, 'delete-impact'],
@@ -332,6 +412,19 @@ export function SuiteDetailPage() {
         </div>
       </div>
 
+      <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <DragOverlay>
+        {draggingCaseId &&
+          (() => {
+            const draggedCase = casesQuery.data?.cases.find((c) => c.id === draggingCaseId);
+            const count = selectedCaseIds.has(draggingCaseId) ? selectedCaseIds.size : 1;
+            return (
+              <div className="rounded-md border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 shadow-lg">
+                {count > 1 ? `${count} test cases` : draggedCase?.title ?? 'Test case'}
+              </div>
+            );
+          })()}
+      </DragOverlay>
       <div className="grid grid-cols-[240px_1fr] gap-6">
         <aside>
           <div className="mb-2 flex items-center justify-between">
@@ -369,72 +462,22 @@ export function SuiteDetailPage() {
             </form>
           )}
 
-          <nav className="space-y-0.5">
-            {sections.map((s) =>
-              editingSectionId === s.id ? (
-                <form
-                  key={s.id}
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    updateSection.mutate({ id: s.id, name: editSectionName });
-                  }}
-                  style={{ paddingLeft: `${8 + s.depth * 14}px` }}
-                  className="flex items-center gap-1 py-0.5 pr-2"
-                >
-                  <Input
-                    autoFocus
-                    value={editSectionName}
-                    onChange={(e) => setEditSectionName(e.target.value)}
-                    className="py-0.5 text-sm"
-                  />
-                  <button type="submit" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    className="text-xs text-slate-500 dark:text-slate-400 hover:underline"
-                    onClick={() => setEditingSectionId(null)}
-                  >
-                    Cancel
-                  </button>
-                </form>
-              ) : (
-                <div key={s.id} className="group flex items-center rounded-md pr-1">
-                  <button
-                    onClick={() => setSelectedSectionId(s.id)}
-                    style={{ paddingLeft: `${8 + s.depth * 14}px` }}
-                    className={`block flex-1 truncate rounded-md py-1.5 text-left text-sm ${
-                      s.id === activeSectionId ? 'bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {s.name}
-                  </button>
-                  {canManageStructure && (
-                    <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-                      <button
-                        onClick={() => {
-                          setEditingSectionId(s.id);
-                          setEditSectionName(s.name);
-                        }}
-                        aria-label="Rename section"
-                        className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                      <button
-                        onClick={() => setSectionDeleteTarget(s)}
-                        aria-label="Delete section"
-                        className="rounded p-1 text-slate-400 hover:bg-red-100 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-900/50 dark:hover:text-red-400"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ),
-            )}
-            {sections.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No sections yet.</p>}
-          </nav>
+          <SectionTree
+            sections={suiteQuery.data.suite.sections}
+            activeSectionId={activeSectionId}
+            onSelect={setSelectedSectionId}
+            canManageStructure={canManageStructure}
+            editingSectionId={editingSectionId}
+            editingName={editSectionName}
+            onEditingNameChange={setEditSectionName}
+            onStartRename={(id, name) => {
+              setEditingSectionId(id);
+              setEditSectionName(name);
+            }}
+            onSubmitRename={() => updateSection.mutate({ id: editingSectionId!, name: editSectionName })}
+            onCancelRename={() => setEditingSectionId(null)}
+            onRequestDelete={setSectionDeleteTarget}
+          />
         </aside>
 
         <section>
@@ -525,6 +568,7 @@ export function SuiteDetailPage() {
                 {casesQuery.data?.cases.map((testCase) => (
                   <div key={testCase.id} className="p-3">
                     <div className="flex items-center justify-between">
+                      {canWriteCases && <CaseDragHandle caseId={testCase.id} disabled={showDeleted} />}
                       {canWriteCases && (
                         <input
                           type="checkbox"
@@ -673,6 +717,7 @@ export function SuiteDetailPage() {
           )}
         </section>
       </div>
+      </DndContext>
 
       <ConfirmDialog
         open={suiteDeleteOpen}
