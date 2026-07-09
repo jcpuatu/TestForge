@@ -35,6 +35,10 @@ testsRouter.patch(
   }),
 );
 
+function toPublicResult(result: { stepResults: string | null; [key: string]: unknown }) {
+  return { ...result, stepResults: result.stepResults ? JSON.parse(result.stepResults) : null };
+}
+
 testsRouter.get(
   '/:id/results',
   asyncHandler(async (req, res) => {
@@ -43,7 +47,7 @@ testsRouter.get(
       orderBy: { createdAt: 'desc' },
       include: { enteredBy: { select: { id: true, name: true } } },
     });
-    res.json({ results });
+    res.json({ results: results.map(toPublicResult) });
   }),
 );
 
@@ -51,17 +55,17 @@ testsRouter.post(
   '/:id/results',
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
-    const body = createResultSchema.parse(req.body);
+    const { stepResults, ...body } = createResultSchema.parse(req.body);
     const runCase = await prisma.runCase.findUnique({ where: { id: req.params.id } });
     if (!runCase) throw new NotFoundError('Test');
 
     const [result] = await prisma.$transaction([
       prisma.result.create({
-        data: { ...body, runCaseId: runCase.id, enteredById: req.user!.id },
+        data: { ...body, stepResults: stepResults ? JSON.stringify(stepResults) : undefined, runCaseId: runCase.id, enteredById: req.user!.id },
       }),
       prisma.runCase.update({ where: { id: runCase.id }, data: { status: body.status } }),
     ]);
 
-    res.status(201).json({ result });
+    res.status(201).json({ result: toPublicResult(result) });
   }),
 );

@@ -41,12 +41,18 @@ export interface RunSummary {
   total: number;
 }
 
+export interface StepResult {
+  status: ResultStatus;
+  actual?: string;
+}
+
 export interface Result {
   id: string;
   status: ResultStatus;
   comment: string | null;
   defects: string | null;
   elapsedMs: number | null;
+  stepResults: StepResult[] | null;
   createdAt: string;
   enteredBy: { id: string; name: string } | null;
 }
@@ -83,7 +89,10 @@ export function listResults(testId: string) {
   return apiFetch<{ results: Result[] }>(`/tests/${testId}/results`);
 }
 
-export function submitResult(testId: string, input: { status: ResultStatus; comment?: string; defects?: string }) {
+export function submitResult(
+  testId: string,
+  input: { status: ResultStatus; comment?: string; defects?: string; stepResults?: StepResult[] },
+) {
   return apiFetch<{ result: Result }>(`/tests/${testId}/results`, { method: 'POST', body: input });
 }
 

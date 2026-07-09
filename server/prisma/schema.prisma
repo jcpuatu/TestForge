@@ -328,6 +328,7 @@ model Result {
   comment     String?
   defects     String?
   elapsedMs   Int?
+  stepResults String? // STEPS-template tests only — JSON array of { status, actual }, positionally matching RunCase.stepsSnapshot
   enteredById String?
   enteredBy   User?    @relation(fields: [enteredById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())

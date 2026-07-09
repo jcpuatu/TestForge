@@ -167,6 +167,8 @@ function TestRow({
   const [comment, setComment] = useState('');
   const [defects, setDefects] = useState('');
   const [showDraft, setShowDraft] = useState(false);
+  const [stepStatuses, setStepStatuses] = useState<Record<number, ResultStatus>>({});
+  const [stepActuals, setStepActuals] = useState<Record<number, string>>({});
 
   const resultsQuery = useQuery({
     queryKey: ['tests', test.id, 'results'],
@@ -175,10 +177,18 @@ function TestRow({
   });
 
   const submitResult = useMutation({
-    mutationFn: (status: ResultStatus) => runsApi.submitResult(test.id, { status, comment: comment || undefined, defects: defects || undefined }),
+    mutationFn: (status: ResultStatus) => {
+      const stepResults =
+        test.templateSnapshot === 'STEPS' && test.stepsSnapshot && test.stepsSnapshot.length > 0
+          ? test.stepsSnapshot.map((_, i) => ({ status: stepStatuses[i] ?? 'UNTESTED', actual: stepActuals[i] || undefined }))
+          : undefined;
+      return runsApi.submitResult(test.id, { status, comment: comment || undefined, defects: defects || undefined, stepResults });
+    },
     onSuccess: () => {
       setComment('');
       setDefects('');
+      setStepStatuses({});
+      setStepActuals({});
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['tests', test.id, 'results'] });
     },
@@ -265,7 +275,45 @@ function TestRow({
             )
           ) : (
             test.stepsSnapshot &&
-            test.stepsSnapshot.length > 0 && (
+            test.stepsSnapshot.length > 0 &&
+            (canSubmit ? (
+              <div className="space-y-1.5">
+                {test.stepsSnapshot.map((step, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    <span className="mt-1.5 w-4 shrink-0 text-slate-400 dark:text-slate-500">{i + 1}.</span>
+                    <div className="flex-1">
+                      <p className="text-slate-600 dark:text-slate-400">
+                        {step.step}
+                        {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div className="w-32 shrink-0">
+                          <Select
+                            aria-label={`Step ${i + 1} status`}
+                            value={stepStatuses[i] ?? 'UNTESTED'}
+                            onChange={(e) => setStepStatuses((prev) => ({ ...prev, [i]: e.target.value as ResultStatus }))}
+                            className="py-1 text-xs"
+                          >
+                            {(['UNTESTED', ...STATUS_OPTIONS] as ResultStatus[]).map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <Input
+                          aria-label={`Step ${i + 1} actual result`}
+                          placeholder="Actual result (optional)"
+                          value={stepActuals[i] ?? ''}
+                          onChange={(e) => setStepActuals((prev) => ({ ...prev, [i]: e.target.value }))}
+                          className="flex-1 py-1 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
               <ol className="ml-5 list-decimal text-sm text-slate-600 dark:text-slate-400">
                 {test.stepsSnapshot.map((step, i) => (
                   <li key={i}>
@@ -274,7 +322,7 @@ function TestRow({
                   </li>
                 ))}
               </ol>
-            )
+            ))
           )}
 
           {canSubmit && (
@@ -343,6 +391,16 @@ function TestRow({
                       <p>
                         {r.comment} {r.defects && <DefectText value={r.defects} />}
                       </p>
+                      {r.stepResults && r.stepResults.length > 0 && (
+                        <ol className="ml-4 mt-0.5 list-decimal space-y-0.5">
+                          {r.stepResults.map((sr, i) => (
+                            <li key={i} className="flex items-center gap-1.5">
+                              <StatusBadge status={sr.status} />
+                              {sr.actual && <span>{sr.actual}</span>}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
                       <p className="text-slate-400 dark:text-slate-500">
                         {r.enteredBy?.name} · {new Date(r.createdAt).toLocaleString()}
                       </p>
