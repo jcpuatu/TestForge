@@ -1,11 +1,14 @@
 import { apiFetch } from '../lib/apiClient';
-import type { CaseStep, CaseType, Priority, TestCase } from './types';
+import type { CaseStep, CaseTemplate, CaseType, Priority, TestCase } from './types';
 
 export interface CaseInput {
   title: string;
+  template?: CaseTemplate;
   preconditions?: string;
   steps?: CaseStep[];
   expectedResult?: string;
+  mission?: string;
+  goals?: string;
   priority?: Priority;
   type?: CaseType;
   estimate?: string;

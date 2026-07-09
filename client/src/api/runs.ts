@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiClient';
-import type { Priority } from './types';
+import type { CaseTemplate, Priority } from './types';
 
 export interface TestRun {
   id: string;
@@ -22,8 +22,11 @@ export interface RunCase {
   runId: string;
   caseId: string | null;
   titleSnapshot: string;
+  templateSnapshot: CaseTemplate;
   stepsSnapshot: { step: string; expected?: string }[] | null;
   expectedSnapshot: string | null;
+  missionSnapshot: string | null;
+  goalsSnapshot: string | null;
   priority: Priority;
   status: ResultStatus;
   assignedToId: string | null;

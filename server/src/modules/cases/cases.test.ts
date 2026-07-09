@@ -190,4 +190,39 @@ describe('project → suite → section → case CRUD', () => {
     const dbCase = await prisma.testCase.findUnique({ where: { id: caseId } });
     expect(dbCase).toBeNull();
   });
+
+  it('supports TEXT and EXPLORATORY templates alongside the default STEPS shape', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'Template Test' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth(adminToken))
+      .send({ name: 'Suite' });
+    const section = await request(app)
+      .post(`/api/v1/suites/${suite.body.suite.id}/sections`)
+      .set(auth(adminToken))
+      .send({ name: 'Section' });
+    const sectionId = section.body.section.id;
+
+    const defaultCase = await request(app)
+      .post(`/api/v1/sections/${sectionId}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Default template' });
+    expect(defaultCase.body.case.template).toBe('TEXT');
+
+    const explCase = await request(app)
+      .post(`/api/v1/sections/${sectionId}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Exploratory session', template: 'EXPLORATORY', mission: 'Probe checkout edge cases', goals: 'Try invalid coupons' });
+    expect(explCase.status).toBe(201);
+    expect(explCase.body.case.template).toBe('EXPLORATORY');
+    expect(explCase.body.case.mission).toBe('Probe checkout edge cases');
+    expect(explCase.body.case.goals).toBe('Try invalid coupons');
+
+    const stepsCase = await request(app)
+      .post(`/api/v1/sections/${sectionId}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Steps case', template: 'STEPS', steps: [{ step: 'Do X', expected: 'Y happens' }] });
+    expect(stepsCase.body.case.template).toBe('STEPS');
+    expect(stepsCase.body.case.steps).toEqual([{ step: 'Do X', expected: 'Y happens' }]);
+  });
 });

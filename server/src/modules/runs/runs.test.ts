@@ -44,6 +44,24 @@ describe('runs and results', () => {
     expect(tests.body.tests.every((t: { status: string }) => t.status === 'UNTESTED')).toBe(true);
   });
 
+  it('snapshots template/mission/goals for an exploratory case', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'Expl Run Project' });
+    const projectId = project.body.project.id;
+    const suite = await request(app).post(`/api/v1/projects/${projectId}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const suiteId = suite.body.suite.id;
+    const section = await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+    await request(app)
+      .post(`/api/v1/sections/${section.body.section.id}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Explore checkout', template: 'EXPLORATORY', mission: 'Find gaps', goals: 'Try weird inputs' });
+
+    const run = await request(app).post(`/api/v1/projects/${projectId}/runs`).set(auth(adminToken)).send({ name: 'Expl Run', suiteId });
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth(adminToken));
+    expect(tests.body.tests[0].templateSnapshot).toBe('EXPLORATORY');
+    expect(tests.body.tests[0].missionSnapshot).toBe('Find gaps');
+    expect(tests.body.tests[0].goalsSnapshot).toBe('Try weird inputs');
+  });
+
   it('supports a partial run with only selected case ids', async () => {
     const { projectId, suiteId } = await seedSuiteWithCases();
     const cases = await request(app).get(`/api/v1/suites/${suiteId}/cases`).set(auth(adminToken));

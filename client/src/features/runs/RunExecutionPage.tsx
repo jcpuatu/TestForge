@@ -232,15 +232,38 @@ function TestRow({
 
       {expanded && (
         <div className="mt-3 space-y-3">
-          {test.stepsSnapshot && test.stepsSnapshot.length > 0 && (
-            <ol className="ml-5 list-decimal text-sm text-slate-600 dark:text-slate-400">
-              {test.stepsSnapshot.map((step, i) => (
-                <li key={i}>
-                  {step.step}
-                  {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
-                </li>
-              ))}
-            </ol>
+          {test.templateSnapshot === 'EXPLORATORY' ? (
+            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+              {test.missionSnapshot && (
+                <p>
+                  <span className="font-medium text-slate-700 dark:text-slate-300">Mission: </span>
+                  {test.missionSnapshot}
+                </p>
+              )}
+              {test.goalsSnapshot && (
+                <p className="whitespace-pre-line">
+                  <span className="font-medium text-slate-700 dark:text-slate-300">Goals: </span>
+                  {test.goalsSnapshot}
+                </p>
+              )}
+            </div>
+          ) : test.templateSnapshot === 'TEXT' ? (
+            test.stepsSnapshot &&
+            test.stepsSnapshot.length > 0 && (
+              <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-400">{test.stepsSnapshot[0].step}</p>
+            )
+          ) : (
+            test.stepsSnapshot &&
+            test.stepsSnapshot.length > 0 && (
+              <ol className="ml-5 list-decimal text-sm text-slate-600 dark:text-slate-400">
+                {test.stepsSnapshot.map((step, i) => (
+                  <li key={i}>
+                    {step.step}
+                    {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
+                  </li>
+                ))}
+              </ol>
+            )
           )}
 
           {canSubmit && (

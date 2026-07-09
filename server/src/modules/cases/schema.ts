@@ -7,9 +7,12 @@ const stepSchema = z.object({
 
 export const createCaseSchema = z.object({
   title: z.string().min(1).max(300),
+  template: z.enum(['TEXT', 'STEPS', 'EXPLORATORY', 'BDD']).default('TEXT'),
   preconditions: z.string().max(4000).optional(),
   steps: z.array(stepSchema).optional(),
   expectedResult: z.string().max(4000).optional(),
+  mission: z.string().max(2000).optional(),
+  goals: z.string().max(2000).optional(),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
   type: z
     .enum(['FUNCTIONAL', 'SMOKE', 'REGRESSION', 'PERFORMANCE', 'SECURITY', 'USABILITY', 'ACCEPTANCE', 'OTHER'])

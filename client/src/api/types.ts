@@ -1,5 +1,6 @@
 export type Role = 'ADMIN' | 'LEAD' | 'TESTER' | 'VIEWER';
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type CaseTemplate = 'TEXT' | 'STEPS' | 'EXPLORATORY' | 'BDD';
 export type CaseType =
   | 'FUNCTIONAL'
   | 'SMOKE'
@@ -63,9 +64,12 @@ export interface TestCase {
   suiteId: string;
   sectionId: string | null;
   title: string;
+  template: CaseTemplate;
   preconditions: string | null;
   steps: CaseStep[] | null;
   expectedResult: string | null;
+  mission: string | null;
+  goals: string | null;
   priority: Priority;
   type: CaseType;
   estimate: string | null;

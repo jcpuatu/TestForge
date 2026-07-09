@@ -663,30 +663,55 @@ export function SuiteDetailPage() {
                     ) : (
                       expandedCaseId === testCase.id && (
                         <div className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                          {testCase.preconditions && (
-                            <p>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">Preconditions: </span>
-                              {testCase.preconditions}
-                            </p>
-                          )}
-                          {testCase.steps && testCase.steps.length > 0 && (
-                            <div>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">Steps:</span>
-                              <ol className="ml-5 list-decimal">
-                                {testCase.steps.map((step, i) => (
-                                  <li key={i}>
-                                    {step.step}
-                                    {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          )}
-                          {testCase.expectedResult && (
-                            <p>
-                              <span className="font-medium text-slate-700 dark:text-slate-300">Expected result: </span>
-                              {testCase.expectedResult}
-                            </p>
+                          {testCase.template === 'EXPLORATORY' ? (
+                            <>
+                              {testCase.mission && (
+                                <p>
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Mission: </span>
+                                  {testCase.mission}
+                                </p>
+                              )}
+                              {testCase.goals && (
+                                <p className="whitespace-pre-line">
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Goals: </span>
+                                  {testCase.goals}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {testCase.preconditions && (
+                                <p>
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Preconditions: </span>
+                                  {testCase.preconditions}
+                                </p>
+                              )}
+                              {testCase.steps && testCase.steps.length > 0 && testCase.template === 'STEPS' && (
+                                <div>
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Steps:</span>
+                                  <ol className="ml-5 list-decimal">
+                                    {testCase.steps.map((step, i) => (
+                                      <li key={i}>
+                                        {step.step}
+                                        {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              )}
+                              {testCase.steps && testCase.steps.length > 0 && testCase.template === 'TEXT' && (
+                                <p className="whitespace-pre-line">
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Steps: </span>
+                                  {testCase.steps[0].step}
+                                </p>
+                              )}
+                              {testCase.expectedResult && (
+                                <p>
+                                  <span className="font-medium text-slate-700 dark:text-slate-300">Expected result: </span>
+                                  {testCase.expectedResult}
+                                </p>
+                              )}
+                            </>
                           )}
                           {testCase.estimate && (
                             <p>
