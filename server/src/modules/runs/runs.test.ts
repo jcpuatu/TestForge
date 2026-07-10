@@ -113,6 +113,25 @@ describe('runs and results', () => {
     expect(rerun.status).toBe(400);
   });
 
+  it('assigns every test in a run to one user at creation, and bulk-reassigns via PATCH', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const tester = await prisma.user.create({
+      data: { email: 'run-assignee@example.com', name: 'Assignee', role: 'TESTER', passwordHash: await hashPassword('TesterPass123!') },
+    });
+
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Assigned Run', suiteId, assignedToId: tester.id });
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth(adminToken));
+    expect(tests.body.tests.every((t: { assignedToId: string }) => t.assignedToId === tester.id)).toBe(true);
+
+    const unassign = await request(app).patch(`/api/v1/runs/${run.body.run.id}`).set(auth(adminToken)).send({ assignedToId: null });
+    expect(unassign.status).toBe(200);
+    const afterUnassign = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth(adminToken));
+    expect(afterUnassign.body.tests.every((t: { assignedToId: string | null }) => t.assignedToId === null)).toBe(true);
+  });
+
   it('supports a partial run with only selected case ids', async () => {
     const { projectId, suiteId } = await seedSuiteWithCases();
     const cases = await request(app).get(`/api/v1/suites/${suiteId}/cases`).set(auth(adminToken));

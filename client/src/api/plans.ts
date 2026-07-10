@@ -42,7 +42,7 @@ export function deletePlan(id: string) {
   return apiFetch<void>(`/plans/${id}`, { method: 'DELETE' });
 }
 
-export function createPlanRun(planId: string, input: { name: string; suiteId: string; caseIds?: string[] }) {
+export function createPlanRun(planId: string, input: { name: string; suiteId: string; caseIds?: string[]; assignedToId?: string }) {
   return apiFetch<{ run: TestRun }>(`/plans/${planId}/runs`, { method: 'POST', body: input });
 }
 

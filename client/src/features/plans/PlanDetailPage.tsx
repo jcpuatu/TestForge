@@ -5,6 +5,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import * as plansApi from '../../api/plans';
 import * as suitesApi from '../../api/suites';
 import * as configApi from '../../api/configurations';
+import * as usersApi from '../../api/users';
 import type { ResultStatus } from '../../api/runs';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
@@ -28,6 +29,7 @@ export function PlanDetailPage() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [suiteId, setSuiteId] = useState('');
+  const [runAssigneeId, setRunAssigneeId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -51,6 +53,7 @@ export function PlanDetailPage() {
     enabled: !!planQuery.data,
   });
   const configGroups = configGroupsQuery.data?.configGroups ?? [];
+  const directoryQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
 
   function toggleConfig(id: string) {
     setConfigIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
@@ -59,12 +62,15 @@ export function PlanDetailPage() {
   const addRun = useMutation({
     mutationFn: () =>
       configIds.length > 0
-        ? configApi.createPlanRunsByConfig(planId!, { name, suiteId, configIds }).then((res) => res.runs)
-        : plansApi.createPlanRun(planId!, { name, suiteId }).then((res) => [res.run]),
+        ? configApi
+            .createPlanRunsByConfig(planId!, { name, suiteId, configIds, assignedToId: runAssigneeId || undefined })
+            .then((res) => res.runs)
+        : plansApi.createPlanRun(planId!, { name, suiteId, assignedToId: runAssigneeId || undefined }).then((res) => [res.run]),
     onSuccess: () => {
       setName('');
       setSuiteId('');
       setConfigIds([]);
+      setRunAssigneeId('');
       setShowForm(false);
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['plans', planId] });
@@ -279,6 +285,17 @@ export function PlanDetailPage() {
               {suitesQuery.data?.suites.map((suite) => (
                 <option key={suite.id} value={suite.id}>
                   {suite.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field>
+            <Label htmlFor="plan-run-assignee">Assign all tests to (optional)</Label>
+            <Select id="plan-run-assignee" value={runAssigneeId} onChange={(e) => setRunAssigneeId(e.target.value)}>
+              <option value="">Unassigned</option>
+              {directoryQuery.data?.users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
                 </option>
               ))}
             </Select>

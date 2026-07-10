@@ -63,6 +63,7 @@ export async function createRun(projectId: string, input: CreateRunInput, create
         goalsSnapshot: c.goals,
         bddLinesSnapshot: c.bddLines,
         priority: c.priority,
+        assignedToId: input.assignedToId,
         orderIndex: index,
       })),
     });

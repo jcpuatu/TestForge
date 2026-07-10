@@ -170,6 +170,7 @@ function TestRow({
   const [showDraft, setShowDraft] = useState(false);
   const [stepStatuses, setStepStatuses] = useState<Record<number, ResultStatus>>({});
   const [stepActuals, setStepActuals] = useState<Record<number, string>>({});
+  const [submitAssigneeId, setSubmitAssigneeId] = useState(test.assignedTo?.id ?? '');
 
   const resultsQuery = useQuery({
     queryKey: ['tests', test.id, 'results'],
@@ -347,12 +348,34 @@ function TestRow({
                   ))}
                 </datalist>
               </Field>
+              {canAssign && (
+                <Field>
+                  <Label htmlFor={`submit-assignee-${test.id}`}>Assign to</Label>
+                  <Select
+                    id={`submit-assignee-${test.id}`}
+                    value={submitAssigneeId}
+                    onChange={(e) => setSubmitAssigneeId(e.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {directory.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.id === currentUserId ? `${u.name} (me)` : u.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 {STATUS_OPTIONS.map((status) => (
                   <button
                     key={status}
                     disabled={submitResult.isPending}
-                    onClick={() => submitResult.mutate(status)}
+                    onClick={() => {
+                      if (submitAssigneeId !== (test.assignedTo?.id ?? '')) {
+                        reassign.mutate(submitAssigneeId || null);
+                      }
+                      submitResult.mutate(status);
+                    }}
                     className={`rounded-md px-3 py-1.5 text-xs font-semibold ${STATUS_BUTTON_CLASSES[status]}`}
                   >
                     {status}

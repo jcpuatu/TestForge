@@ -42,6 +42,9 @@ export function deleteConfig(id: string) {
   return apiFetch<void>(`/configs/${id}`, { method: 'DELETE' });
 }
 
-export function createPlanRunsByConfig(planId: string, input: { name: string; suiteId: string; caseIds?: string[]; configIds: string[] }) {
+export function createPlanRunsByConfig(
+  planId: string,
+  input: { name: string; suiteId: string; caseIds?: string[]; configIds: string[]; assignedToId?: string },
+) {
   return apiFetch<{ runs: TestRun[] }>(`/plans/${planId}/runs/by-config`, { method: 'POST', body: input });
 }

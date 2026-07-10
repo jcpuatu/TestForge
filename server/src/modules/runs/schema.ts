@@ -10,6 +10,7 @@ export const createRunSchema = z.object({
   startDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
   caseIds: z.array(z.string()).optional(), // omit to include all cases in the suite
+  assignedToId: z.string().optional(), // assigns every test in the run to this user at creation
 });
 
 export const rerunSchema = z.object({
@@ -23,4 +24,8 @@ export const updateRunSchema = z.object({
   description: z.string().max(2000).optional(),
   startDate: z.string().datetime().nullable().optional(),
   endDate: z.string().datetime().nullable().optional(),
+  // Not a TestRun column — when present, bulk-reassigns every RunCase in the run in one step.
+  // Distinct from the existing per-test /tests/:id/results-adjacent reassign and the
+  // /runs/:id/tests/bulk-assign endpoint, which target a chosen subset instead of "everything".
+  assignedToId: z.string().nullable().optional(),
 });

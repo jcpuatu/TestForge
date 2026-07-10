@@ -96,7 +96,7 @@ runsRouter.patch(
   '/:id',
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
-    const body = updateRunSchema.parse(req.body);
+    const { assignedToId, ...body } = updateRunSchema.parse(req.body);
     const existing = await prisma.testRun.findUnique({ where: { id: req.params.id } });
     if (!existing) throw new NotFoundError('Run');
     if (existing.isCompleted && (body.startDate !== undefined || body.endDate !== undefined)) {
@@ -105,6 +105,9 @@ runsRouter.patch(
     const data: Record<string, unknown> = { ...body };
     if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
     if (body.endDate !== undefined) data.endDate = body.endDate ? new Date(body.endDate) : null;
+    if (assignedToId !== undefined) {
+      await prisma.runCase.updateMany({ where: { runId: req.params.id }, data: { assignedToId } });
+    }
     const run = await prisma.testRun.update({ where: { id: req.params.id }, data });
     res.json({ run });
   }),

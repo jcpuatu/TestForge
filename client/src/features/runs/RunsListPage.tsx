@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import * as runsApi from '../../api/runs';
+import * as usersApi from '../../api/users';
 import type { Project, Suite } from '../../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
@@ -21,15 +22,18 @@ export function RunsListPage() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [suiteId, setSuiteId] = useState('');
+  const [assignedToId, setAssignedToId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const runsQuery = useQuery({ queryKey: ['projects', projectId, 'runs'], queryFn: () => runsApi.listRuns(projectId!) });
+  const directoryQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
 
   const createRun = useMutation({
-    mutationFn: () => runsApi.createRun(projectId!, { name, suiteId }),
+    mutationFn: () => runsApi.createRun(projectId!, { name, suiteId, assignedToId: assignedToId || undefined }),
     onSuccess: () => {
       setName('');
       setSuiteId('');
+      setAssignedToId('');
       setShowForm(false);
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'runs'] });
@@ -64,6 +68,17 @@ export function RunsListPage() {
               {project.suites.map((suite: Suite) => (
                 <option key={suite.id} value={suite.id}>
                   {suite.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field>
+            <Label htmlFor="run-assignee">Assign all tests to (optional)</Label>
+            <Select id="run-assignee" value={assignedToId} onChange={(e) => setAssignedToId(e.target.value)}>
+              <option value="">Unassigned</option>
+              {directoryQuery.data?.users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
                 </option>
               ))}
             </Select>

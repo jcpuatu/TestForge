@@ -67,7 +67,15 @@ export function listRuns(projectId: string) {
 
 export function createRun(
   projectId: string,
-  input: { name: string; description?: string; suiteId: string; startDate?: string; endDate?: string; caseIds?: string[] },
+  input: {
+    name: string;
+    description?: string;
+    suiteId: string;
+    startDate?: string;
+    endDate?: string;
+    caseIds?: string[];
+    assignedToId?: string;
+  },
 ) {
   return apiFetch<{ run: TestRun }>(`/projects/${projectId}/runs`, { method: 'POST', body: input });
 }
@@ -76,7 +84,10 @@ export function getRun(id: string) {
   return apiFetch<{ run: TestRun }>(`/runs/${id}`);
 }
 
-export function updateRun(id: string, input: { name?: string; description?: string; startDate?: string | null; endDate?: string | null }) {
+export function updateRun(
+  id: string,
+  input: { name?: string; description?: string; startDate?: string | null; endDate?: string | null; assignedToId?: string | null },
+) {
   return apiFetch<{ run: TestRun }>(`/runs/${id}`, { method: 'PATCH', body: input });
 }
 
