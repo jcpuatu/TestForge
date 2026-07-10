@@ -17,6 +17,7 @@ import { MilestonesTab } from './features/milestones/MilestonesTab';
 import { PlansListTab } from './features/plans/PlansListTab';
 import { PlanDetailPage } from './features/plans/PlanDetailPage';
 import { ReportsTab } from './features/reports/ReportsTab';
+import { ReportsPage } from './features/reports/ReportsPage';
 import { WebhooksTab } from './features/webhooks/WebhooksTab';
 import { UsersAdminPage } from './features/admin/UsersAdminPage';
 import { ApiKeysPage } from './features/admin/ApiKeysPage';
@@ -61,6 +62,7 @@ function App() {
               <Route path="plans" element={<PlansListTab />} />
               <Route path="milestones" element={<MilestonesTab />} />
               <Route path="defects" element={<DefectsTab />} />
+              <Route path="reports" element={<ReportsPage />} />
               <Route path="activity" element={<ActivityTab />} />
               <Route path="webhooks" element={<WebhooksTab />} />
             </Route>

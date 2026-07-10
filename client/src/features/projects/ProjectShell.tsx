@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { Activity, Bug, ChevronLeft, Flag, LayoutDashboard, Layers, ListChecks, PlayCircle, Webhook, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, Bug, ChevronLeft, Flag, LayoutDashboard, Layers, ListChecks, PlayCircle, Webhook, type LucideIcon } from 'lucide-react';
 import * as projectsApi from '../../api/projects';
 import { useAuth } from '../auth/AuthContext';
 
@@ -12,6 +12,7 @@ const TABS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: 'plans', label: 'Test Plans', icon: Layers },
   { to: 'milestones', label: 'Milestones', icon: Flag },
   { to: 'defects', label: 'Defects', icon: Bug },
+  { to: 'reports', label: 'Reports', icon: BarChart3 },
   { to: 'activity', label: 'Activity', icon: Activity },
 ];
 

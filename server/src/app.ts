@@ -15,7 +15,7 @@ import { runsRouter, runsNestedRouter, runsByPlanRouter } from './modules/runs/r
 import { testsRouter } from './modules/results/routes';
 import { milestonesRouter, milestonesNestedRouter } from './modules/milestones/routes';
 import { plansRouter, plansNestedRouter } from './modules/plans/routes';
-import { dashboardRouter, defectsRouter, crossProjectDashboardRouter } from './modules/reports/routes';
+import { dashboardRouter, defectsRouter, crossProjectDashboardRouter, casesReportsRouter } from './modules/reports/routes';
 import { webhooksRouter, webhooksNestedRouter } from './modules/webhooks/routes';
 import { labelsRouter, labelsNestedRouter } from './modules/labels/routes';
 import { sharedStepSetsRouter, sharedStepSetsNestedRouter, promoteSharedStepsRouter } from './modules/sharedSteps/routes';
@@ -48,6 +48,7 @@ app.use('/api/v1/projects/:projectId/plans', plansNestedRouter);
 app.use('/api/v1/projects/:projectId/dashboard', dashboardRouter);
 app.use('/api/v1/dashboard', crossProjectDashboardRouter);
 app.use('/api/v1/projects/:projectId/defects', defectsRouter);
+app.use('/api/v1/projects/:projectId/reports/cases', casesReportsRouter);
 app.use('/api/v1/projects/:projectId/webhooks', webhooksNestedRouter);
 app.use('/api/v1/projects/:projectId/labels', labelsNestedRouter);
 app.use('/api/v1/projects/:projectId/shared-step-sets', sharedStepSetsNestedRouter);

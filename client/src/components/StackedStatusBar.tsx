@@ -10,7 +10,17 @@ const SEGMENTS: { status: ResultStatus; color: string }[] = [
 
 export const STATUS_LEGEND = SEGMENTS;
 
-export function StackedStatusBar({ counts, total, height = 10 }: { counts: Record<ResultStatus, number>; total: number; height?: number }) {
+export function StackedStatusBar({
+  counts,
+  total,
+  height = 10,
+  onSegmentClick,
+}: {
+  counts: Record<ResultStatus, number>;
+  total: number;
+  height?: number;
+  onSegmentClick?: (status: ResultStatus) => void;
+}) {
   if (total === 0) {
     return <div className="rounded-full bg-slate-100 dark:bg-slate-700" style={{ height }} />;
   }
@@ -20,12 +30,14 @@ export function StackedStatusBar({ counts, total, height = 10 }: { counts: Recor
       {visible.map((seg, i) => (
         <div
           key={seg.status}
-          className={seg.color}
+          className={onSegmentClick ? `${seg.color} cursor-pointer` : seg.color}
           style={{
             width: `${(counts[seg.status] / total) * 100}%`,
             marginRight: i < visible.length - 1 ? 2 : 0,
           }}
           title={`${seg.status}: ${counts[seg.status]}`}
+          onClick={onSegmentClick ? () => onSegmentClick(seg.status) : undefined}
+          role={onSegmentClick ? 'button' : undefined}
         />
       ))}
     </div>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { prisma } from '../../config/prisma-client';
+import { getActivitySummary, getCasePropertyDistribution, getCoverageForReferences, getStatusTops } from './casesReports';
 
 // Mounted at /api/v1/projects/:projectId/dashboard
 export const dashboardRouter = Router({ mergeParams: true });
@@ -193,5 +194,39 @@ defectsRouter.get(
 
     const defects = [...byDefect.values()].sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
     res.json({ defects });
+  }),
+);
+
+// Mounted at /api/v1/projects/:projectId/reports/cases — the four "Cases Reports" (Activity
+// Summary, Coverage for References, Property Distribution, Status Tops). All read-only, all
+// project-scoped (spanning every suite in the project, matching dashboardRouter's scope).
+export const casesReportsRouter = Router({ mergeParams: true });
+casesReportsRouter.use(requireAuth);
+
+casesReportsRouter.get(
+  '/activity-summary',
+  asyncHandler(async (req, res) => {
+    res.json(await getActivitySummary(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+casesReportsRouter.get(
+  '/coverage-for-references',
+  asyncHandler(async (req, res) => {
+    res.json(await getCoverageForReferences(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+casesReportsRouter.get(
+  '/property-distribution',
+  asyncHandler(async (req, res) => {
+    res.json(await getCasePropertyDistribution(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+casesReportsRouter.get(
+  '/status-tops',
+  asyncHandler(async (req, res) => {
+    res.json(await getStatusTops(req.params.projectId, req.query as Record<string, unknown>));
   }),
 );
