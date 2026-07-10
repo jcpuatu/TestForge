@@ -70,6 +70,74 @@ dashboardRouter.get(
   }),
 );
 
+// Mounted at /api/v1/dashboard — aggregates across every project (roles are global, not
+// per-project, so every authenticated user can see every project; matches the existing
+// ProjectsListPage behavior of listing all projects unfiltered).
+export const crossProjectDashboardRouter = Router();
+crossProjectDashboardRouter.use(requireAuth);
+
+crossProjectDashboardRouter.get(
+  '/',
+  asyncHandler(async (_req, res) => {
+    const projects = await prisma.project.findMany({ orderBy: { name: 'asc' } });
+
+    const perProject = await Promise.all(
+      projects.map(async (p) => {
+        const [suiteCount, caseCount, runCount, milestoneCount, grouped] = await Promise.all([
+          prisma.suite.count({ where: { projectId: p.id } }),
+          prisma.testCase.count({ where: { suite: { projectId: p.id }, isDeleted: false } }),
+          prisma.testRun.count({ where: { projectId: p.id } }),
+          prisma.milestone.count({ where: { projectId: p.id } }),
+          prisma.runCase.groupBy({
+            by: ['status'],
+            where: { run: { projectId: p.id, isCompleted: false } },
+            _count: { status: true },
+          }),
+        ]);
+        const statusCounts = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
+        for (const row of grouped) statusCounts[row.status as keyof typeof statusCounts] = row._count.status;
+        const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
+
+        return {
+          id: p.id,
+          name: p.name,
+          isCompleted: p.isCompleted,
+          counts: { suites: suiteCount, cases: caseCount, runs: runCount, milestones: milestoneCount },
+          statusCounts,
+          total,
+        };
+      }),
+    );
+
+    const totals = perProject.reduce(
+      (acc, p) => {
+        acc.PASSED += p.statusCounts.PASSED;
+        acc.FAILED += p.statusCounts.FAILED;
+        acc.BLOCKED += p.statusCounts.BLOCKED;
+        acc.RETEST += p.statusCounts.RETEST;
+        acc.UNTESTED += p.statusCounts.UNTESTED;
+        return acc;
+      },
+      { PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0, UNTESTED: 0 },
+    );
+    const totalResults = Object.values(totals).reduce((sum, n) => sum + n, 0);
+    const passRate = totalResults > 0 ? totals.PASSED / totalResults : null;
+
+    res.json({
+      counts: {
+        projects: projects.length,
+        suites: perProject.reduce((sum, p) => sum + p.counts.suites, 0),
+        cases: perProject.reduce((sum, p) => sum + p.counts.cases, 0),
+        runs: perProject.reduce((sum, p) => sum + p.counts.runs, 0),
+        milestones: perProject.reduce((sum, p) => sum + p.counts.milestones, 0),
+      },
+      totals,
+      passRate,
+      projects: perProject,
+    });
+  }),
+);
+
 // Mounted at /api/v1/projects/:projectId/defects
 export const defectsRouter = Router({ mergeParams: true });
 defectsRouter.use(requireAuth);

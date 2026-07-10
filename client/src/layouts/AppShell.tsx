@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CheckSquare, ClipboardList, KeyRound, Moon, Sun, Users } from 'lucide-react';
+import { CheckSquare, ClipboardList, KeyRound, LayoutDashboard, Moon, Sun, Users } from 'lucide-react';
 import { useAuth } from '../features/auth/AuthContext';
 import { useTheme } from '../features/theme/ThemeContext';
 
@@ -23,6 +23,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           TestForge
         </Link>
         <nav className="flex items-center gap-4 text-sm text-slate-300">
+          <Link to="/dashboard" className="flex items-center gap-1.5 hover:text-white">
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </Link>
           <Link to="/my-tests" className="flex items-center gap-1.5 hover:text-white">
             <CheckSquare className="h-4 w-4" />
             My Tests

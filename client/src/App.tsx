@@ -23,6 +23,7 @@ import { ApiKeysPage } from './features/admin/ApiKeysPage';
 import { MyTestsPage } from './features/me/MyTestsPage';
 import { DefectsTab } from './features/defects/DefectsTab';
 import { ActivityTab } from './features/activity/ActivityTab';
+import { CrossProjectDashboardPage } from './features/dashboard/CrossProjectDashboardPage';
 
 function App() {
   return (
@@ -89,6 +90,16 @@ function App() {
                 <ProtectedRoute>
                   <AppShell>
                     <RunExecutionPage />
+                  </AppShell>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <CrossProjectDashboardPage />
                   </AppShell>
                 </ProtectedRoute>
               }
