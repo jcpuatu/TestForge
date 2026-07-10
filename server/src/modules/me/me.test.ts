@@ -64,4 +64,24 @@ describe('test assignment and /me/tests', () => {
     const afterClose = await request(app).get('/api/v1/me/tests').set(authAs(testerToken));
     expect(afterClose.body.tests.find((t: { id: string }) => t.id === testId)).toBeUndefined();
   });
+
+  it('lets an ADMIN view another user\'s test list via ?userId, but a TESTER cannot view someone else\'s', async () => {
+    const project = await request(app).post('/api/v1/projects').set(authAs(adminToken)).send({ name: 'Me Project 2' });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(authAs(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(authAs(adminToken)).send({ name: 'Section' });
+    await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(authAs(adminToken)).send({ title: 'Case' });
+    const run = await request(app).post(`/api/v1/projects/${project.body.project.id}/runs`).set(authAs(adminToken)).send({ name: 'Run', suiteId: suite.body.suite.id });
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(authAs(adminToken));
+    await request(app).patch(`/api/v1/tests/${tests.body.tests[0].id}`).set(authAs(adminToken)).send({ assignedToId: testerId });
+
+    const asAdmin = await request(app).get(`/api/v1/me/tests?userId=${testerId}`).set(authAs(adminToken));
+    expect(asAdmin.body.tests.find((t: { id: string }) => t.id === tests.body.tests[0].id)).toBeTruthy();
+
+    const otherTester = await prisma.user.create({
+      data: { email: 'me-other-tester@example.com', name: 'Other Tester', role: 'TESTER', passwordHash: await hashPassword('TesterPass123!') },
+    });
+    const otherToken = (await request(app).post('/api/v1/auth/login').send({ email: otherTester.email, password: 'TesterPass123!' })).body.accessToken;
+    const asTester = await request(app).get(`/api/v1/me/tests?userId=${testerId}`).set(authAs(otherToken));
+    expect(asTester.body.tests.find((t: { id: string }) => t.id === tests.body.tests[0].id)).toBeUndefined();
+  });
 });

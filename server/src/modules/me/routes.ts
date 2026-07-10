@@ -11,11 +11,26 @@ meRouter.use(requireAuth);
 meRouter.get(
   '/tests',
   asyncHandler(async (req, res) => {
+    // ?userId lets ADMIN/LEAD view another team member's TODO list; anyone else always sees
+    // only their own, regardless of what's passed.
+    const canViewOthers = req.user!.role === 'ADMIN' || req.user!.role === 'LEAD';
+    const targetUserId = canViewOthers && typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+
     const runCases = await prisma.runCase.findMany({
-      where: { assignedToId: req.user!.id, run: { isCompleted: false } },
+      where: { assignedToId: targetUserId, run: { isCompleted: false } },
       orderBy: { createdAt: 'desc' },
       include: {
-        run: { select: { id: true, name: true, projectId: true, project: { select: { name: true } } } },
+        run: {
+          select: {
+            id: true,
+            name: true,
+            projectId: true,
+            project: { select: { name: true } },
+            startDate: true,
+            plan: { select: { startDate: true } },
+            milestone: { select: { startDate: true } },
+          },
+        },
       },
     });
     res.json({ tests: runCases.map(toPublicRunCase) });
