@@ -7,9 +7,19 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  // Most modals (confirm dialogs, small forms) are fine at the default width. Content-heavy
+  // modals (tables, run lists) can opt into 'lg'/'xl' instead of fighting the default — see
+  // CaseHistoryModal for the first real usage.
+  size?: 'md' | 'lg' | 'xl';
 }
 
-export function Modal({ open, onClose, title, children, footer }: ModalProps) {
+const SIZE_CLASSES: Record<NonNullable<ModalProps['size']>, string> = {
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-2xl',
+};
+
+export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     function handleKeyDown(e: KeyboardEvent) {
@@ -27,10 +37,14 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800"
+        // flex-col + max-h bounds the panel to the viewport; only the content area scrolls
+        // (below) so the title bar and footer buttons stay pinned and visible even when the
+        // body is long — a modal with a lot of content (e.g. many runs) no longer grows past
+        // the viewport with no way to reach what's cut off.
+        className={`flex max-h-[85vh] w-full ${SIZE_CLASSES[size]} flex-col rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
           <button
             onClick={onClose}
@@ -40,8 +54,8 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-4 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3 dark:border-slate-700">{footer}</div>}
+        <div className="overflow-y-auto px-4 py-4">{children}</div>
+        {footer && <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 px-4 py-3 dark:border-slate-700">{footer}</div>}
       </div>
     </div>
   );

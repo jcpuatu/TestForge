@@ -16,7 +16,7 @@ export function CaseHistoryModal({ caseId, caseTitle, onClose }: { caseId: strin
   });
 
   return (
-    <Modal open onClose={onClose} title={`History: ${caseTitle}`}>
+    <Modal open onClose={onClose} title={`History: ${caseTitle}`} size="lg">
       {!data ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
       ) : (
@@ -42,16 +42,32 @@ export function CaseHistoryModal({ caseId, caseTitle, onClose }: { caseId: strin
             <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Runs ({data.timeline.length})
             </p>
-            <div className="space-y-1.5">
+            {/* Each run's defect (which can be a long pasted URL, not just a short "BUG-123"
+                id) gets its own line below the run name/status, rather than sharing a
+                justify-between row with them — that's what caused real overlap when a defect
+                value was long. min-w-0 + truncate on both the name and the defect line means
+                neither can force the row wider than the modal; the title attribute surfaces
+                the untruncated value on hover. */}
+            <div className="divide-y divide-slate-100 rounded-md border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
               {[...data.timeline].reverse().map((t, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
-                  <Link to={`/runs/${t.runId}`} className="text-blue-600 dark:text-blue-400 hover:underline">
-                    {t.runName}
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    {t.defects && <DefectText value={t.defects} />}
-                    <StatusBadge status={t.status} />
+                <div key={i} className="flex items-start justify-between gap-3 p-2.5">
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      to={`/runs/${t.runId}`}
+                      className="block truncate text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                      title={t.runName}
+                    >
+                      {t.runName}
+                    </Link>
+                    {t.defects && (
+                      <div className="mt-0.5 truncate text-xs" title={t.defects}>
+                        <DefectText value={t.defects} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
                     {t.isCompleted && <span className="text-xs text-slate-400 dark:text-slate-500">Closed</span>}
+                    <StatusBadge status={t.status} />
                   </div>
                 </div>
               ))}
@@ -61,11 +77,13 @@ export function CaseHistoryModal({ caseId, caseTitle, onClose }: { caseId: strin
           {data.defects.length > 0 && (
             <div>
               <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Defects</p>
-              <div className="space-y-1.5">
+              <div className="divide-y divide-slate-100 rounded-md border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
                 {data.defects.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between text-sm">
-                    <DefectText value={d.id} />
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                  <div key={d.id} className="flex items-center justify-between gap-3 p-2.5 text-sm">
+                    <div className="min-w-0 flex-1 truncate" title={d.id}>
+                      <DefectText value={d.id} />
+                    </div>
+                    <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">
                       {d.count} reference{d.count === 1 ? '' : 's'} · {d.openCount > 0 ? `${d.openCount} still failing` : 'looks resolved'}
                     </span>
                   </div>
