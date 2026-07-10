@@ -36,7 +36,7 @@ export function DefectsSummaryForCasesReport({ projectId }: { projectId: string 
       }
     >
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
-      {data && <MatrixTable runs={data.runs} rows={data.cases} showDefects />}
+      {data && <MatrixTable runs={data.runs} rows={data.cases} showDefects csvFilename="defects-summary-for-cases.csv" />}
     </ReportShell>
   );
 }

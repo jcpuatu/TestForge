@@ -41,7 +41,7 @@ export function DefectsSummaryForReferencesReport({ projectId }: { projectId: st
           {data.references.map((ref) => (
             <div key={ref.reference}>
               <p className="mb-1.5 text-sm font-medium text-slate-800 dark:text-slate-200">{ref.reference}</p>
-              <MatrixTable runs={data.runs} rows={ref.cases} showDefects />
+              <MatrixTable runs={data.runs} rows={ref.cases} showDefects csvFilename={`defects-summary-${ref.reference}.csv`} />
             </div>
           ))}
           {data.references.length === 0 && (

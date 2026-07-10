@@ -5,6 +5,8 @@ import { RunCheckboxList } from '../RunCheckboxList';
 import { ReportShell } from '../ReportShell';
 import { DefectText } from '../../../components/DefectText';
 import { Badge } from '../../../components/Badge';
+import { DownloadCsvButton } from '../../../components/DownloadCsvButton';
+import { downloadTableAsCsv } from '../../../lib/downloadCsv';
 
 export function DefectsSummaryReport({ projectId }: { projectId: string }) {
   const [runIds, setRunIds] = useState<string[]>([]);
@@ -29,7 +31,25 @@ export function DefectsSummaryReport({ projectId }: { projectId: string }) {
     >
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
       {data && (
-        <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+        <>
+          <div className="mb-2 flex justify-end">
+            <DownloadCsvButton
+              onClick={() =>
+                downloadTableAsCsv(
+                  ['Defect ID', 'References', 'Open', 'Resolved', 'Last Seen'],
+                  data.defects.map((d) => [
+                    d.id,
+                    d.count,
+                    d.openCount,
+                    d.resolvedCount,
+                    new Date(d.lastSeenAt).toLocaleDateString(),
+                  ]),
+                  'defects-summary.csv',
+                )
+              }
+            />
+          </div>
+          <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           {data.defects.map((d) => (
             <div key={d.id} className="p-3">
               <button
@@ -62,7 +82,8 @@ export function DefectsSummaryReport({ projectId }: { projectId: string }) {
             </div>
           ))}
           {data.defects.length === 0 && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No defects in the selected runs.</p>}
-        </div>
+          </div>
+        </>
       )}
     </ReportShell>
   );

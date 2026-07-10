@@ -3,6 +3,7 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { prisma } from '../../config/prisma-client';
 import { toPublicRunCase } from '../runs/serialize';
+import { ForbiddenError } from '../../lib/errors';
 
 // Mounted at /api/v1/me
 export const meRouter = Router();
@@ -34,5 +35,39 @@ meRouter.get(
       },
     });
     res.json({ tests: runCases.map(toPublicRunCase) });
+  }),
+);
+
+// Bar of active-run test counts per assignee (Phase K's Workload chart) — Admin/Lead only,
+// since unlike /tests (self-scoped by default) this is inherently cross-user data. Matches
+// TestRail's own Workload chart living on the Todo tab, a lead/manager-facing view.
+meRouter.get(
+  '/workload',
+  asyncHandler(async (req, res) => {
+    if (req.user!.role !== 'ADMIN' && req.user!.role !== 'LEAD') {
+      throw new ForbiddenError('Only admins and leads can view workload across users');
+    }
+
+    const grouped = await prisma.runCase.groupBy({
+      by: ['assignedToId'],
+      where: { run: { isCompleted: false }, assignedToId: { not: null } },
+      _count: { assignedToId: true },
+    });
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: grouped.map((g) => g.assignedToId as string) } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+    const workload = grouped
+      .map((g) => ({
+        userId: g.assignedToId as string,
+        userName: nameById.get(g.assignedToId as string) ?? 'Unknown',
+        count: g._count.assignedToId,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({ workload });
   }),
 );

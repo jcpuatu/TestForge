@@ -7,6 +7,7 @@ import * as usersApi from '../../api/users';
 import { useAuth } from '../auth/AuthContext';
 import { PriorityBadge, StatusBadge } from '../../components/Badge';
 import { StackedStatusBar } from '../../components/StackedStatusBar';
+import { PropertyDistributionChart } from '../../components/PropertyDistributionChart';
 import { Select } from '../../components/Input';
 
 function effectiveStartDate(run: MyTest['run']): string | null {
@@ -68,6 +69,9 @@ export function MyTestsPage() {
     queryFn: () => meApi.listMyTests(viewUserId || undefined),
   });
   const directoryQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory, enabled: canViewOthers });
+  const workloadQuery = useQuery({ queryKey: ['me', 'workload'], queryFn: meApi.getWorkload, enabled: canViewOthers });
+  const workload = workloadQuery.data?.workload ?? [];
+  const workloadTotal = workload.reduce((sum, w) => sum + w.count, 0);
 
   const { activeGroups, upcomingGroups } = useMemo(() => {
     const tests = data?.tests ?? [];
@@ -96,6 +100,17 @@ export function MyTestsPage() {
       <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
         Tests assigned {viewUserId ? 'to the selected user' : 'to you'} in active (not yet closed) test runs, across all projects.
       </p>
+
+      {canViewOthers && workload.length > 0 && (
+        <div className="mb-6 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Workload — active test runs per assignee
+          </p>
+          <PropertyDistributionChart
+            buckets={workload.map((w) => ({ value: w.userName, count: w.count, percent: workloadTotal > 0 ? w.count / workloadTotal : 0 }))}
+          />
+        </div>
+      )}
 
       {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
 

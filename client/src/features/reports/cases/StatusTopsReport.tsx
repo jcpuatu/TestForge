@@ -7,6 +7,8 @@ import { RunCheckboxList } from '../RunCheckboxList';
 import { ReportShell } from '../ReportShell';
 import { PropertyDistributionChart } from '../../../components/PropertyDistributionChart';
 import { StatusBadge } from '../../../components/Badge';
+import { DownloadCsvButton } from '../../../components/DownloadCsvButton';
+import { downloadTableAsCsv } from '../../../lib/downloadCsv';
 import type { ResultStatus } from '../../../api/runs';
 
 export function StatusTopsReport({ projectId }: { projectId: string }) {
@@ -49,9 +51,20 @@ export function StatusTopsReport({ projectId }: { projectId: string }) {
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
               {data.total} test(s) across {data.runs.length} run(s)
             </p>
-            <PropertyDistributionChart buckets={data.buckets} />
+            <PropertyDistributionChart buckets={data.buckets} csvFilename="status-tops-buckets.csv" />
           </div>
 
+          <div className="mb-2 flex justify-end">
+            <DownloadCsvButton
+              onClick={() =>
+                downloadTableAsCsv(
+                  ['Title', 'Priority', 'Status', 'Run'],
+                  data.cases.map((c) => [c.title, c.priority, c.status, data.runs.find((r) => r.id === c.runId)?.name ?? '']),
+                  'status-tops.csv',
+                )
+              }
+            />
+          </div>
           <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
             {data.cases.slice(0, 200).map((c, i) => (
               <div key={`${c.caseId}-${c.runId}-${i}`} className="flex items-center justify-between p-2.5 text-sm">

@@ -41,7 +41,7 @@ export function ComparisonForReferencesReport({ projectId }: { projectId: string
           {data.references.map((ref) => (
             <div key={ref.reference}>
               <p className="mb-1.5 text-sm font-medium text-slate-800 dark:text-slate-200">{ref.reference}</p>
-              <MatrixTable runs={data.runs} rows={ref.cases} />
+              <MatrixTable runs={data.runs} rows={ref.cases} csvFilename={`comparison-${ref.reference}.csv`} />
             </div>
           ))}
           {data.references.length === 0 && (

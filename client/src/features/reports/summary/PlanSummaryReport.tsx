@@ -56,7 +56,9 @@ export function PlanSummaryReport({ projectId }: { projectId: string }) {
         <p className="text-sm text-slate-500 dark:text-slate-400">No test plans in this project yet.</p>
       )}
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
-      {reportQuery.data && <SummaryReportView data={reportQuery.data} />}
+      {reportQuery.data && (
+        <SummaryReportView data={reportQuery.data} csvFilename={`plan-summary-${plans.find((p) => p.id === activePlanId)?.name ?? activePlanId}.csv`} />
+      )}
     </ReportShell>
   );
 }

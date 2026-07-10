@@ -59,7 +59,12 @@ export function MilestoneSummaryReport({ projectId }: { projectId: string }) {
         <p className="text-sm text-slate-500 dark:text-slate-400">No milestones in this project yet.</p>
       )}
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
-      {reportQuery.data && <SummaryReportView data={reportQuery.data} />}
+      {reportQuery.data && (
+        <SummaryReportView
+          data={reportQuery.data}
+          csvFilename={`milestone-summary-${milestones.find((m) => m.id === activeMilestoneId)?.name ?? activeMilestoneId}.csv`}
+        />
+      )}
     </ReportShell>
   );
 }

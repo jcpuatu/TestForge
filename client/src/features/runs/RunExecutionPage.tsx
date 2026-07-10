@@ -13,6 +13,7 @@ import { PriorityBadge, StatusBadge } from '../../components/Badge';
 import { DefectText } from '../../components/DefectText';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { StackedStatusBar, StatusLegend } from '../../components/StackedStatusBar';
+import { PrintButton } from '../../components/PrintButton';
 import { DraftDefectPanel } from './DraftDefectPanel';
 import { RerunDialog } from './RerunDialog';
 import { ResultAttachments } from './ResultAttachments';
@@ -83,7 +84,7 @@ function FilterByUser({
   }
 
   return (
-    <div className="mb-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+    <div className="no-print mb-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
       <button
         className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300"
         onClick={() => setOpen((v) => !v)}
@@ -682,7 +683,10 @@ export function RunExecutionPage() {
 
   return (
     <div>
-      <Link to={`/projects/${run.projectId}/runs`} className="mb-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
+      <Link
+        to={`/projects/${run.projectId}/runs`}
+        className="no-print mb-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline"
+      >
         ← Back to runs
       </Link>
       <div className="mb-4 flex items-center justify-between">
@@ -751,7 +755,8 @@ export function RunExecutionPage() {
               </p>
             )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="no-print flex items-center gap-2">
+          <PrintButton />
           <button
             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
             onClick={() => defectsApi.downloadDefectsCsv(run.id, run.name)}
@@ -832,7 +837,7 @@ export function RunExecutionPage() {
       )}
 
       {canBulkAssign && visibleTests.length > 0 && (
-        <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 px-3 py-2">
+        <div className="no-print mb-2 flex flex-wrap items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700 px-3 py-2">
           <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
             <input
               type="checkbox"

@@ -51,7 +51,7 @@ export function ResultPropertyDistributionReport({ projectId }: { projectId: str
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             {data.total} test(s) across {data.runs.length} run(s)
           </p>
-          <PropertyDistributionChart buckets={data.buckets} />
+          <PropertyDistributionChart buckets={data.buckets} csvFilename={`result-property-distribution-${groupBy}.csv`} />
         </div>
       )}
     </ReportShell>

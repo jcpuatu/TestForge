@@ -42,7 +42,7 @@ export function RunsSummaryReport({ projectId }: { projectId: string }) {
       }
     >
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
-      {reportQuery.data && <SummaryReportView data={reportQuery.data} />}
+      {reportQuery.data && <SummaryReportView data={reportQuery.data} csvFilename="runs-summary.csv" />}
     </ReportShell>
   );
 }

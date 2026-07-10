@@ -17,3 +17,13 @@ export function listMyTests(userId?: string) {
   const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
   return apiFetch<{ tests: MyTest[] }>(`/me/tests${query}`);
 }
+
+export interface WorkloadEntry {
+  userId: string;
+  userName: string;
+  count: number;
+}
+
+export function getWorkload() {
+  return apiFetch<{ workload: WorkloadEntry[] }>('/me/workload');
+}

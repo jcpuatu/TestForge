@@ -36,7 +36,7 @@ export function ComparisonForCasesReport({ projectId }: { projectId: string }) {
       }
     >
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
-      {data && <MatrixTable runs={data.runs} rows={data.cases} />}
+      {data && <MatrixTable runs={data.runs} rows={data.cases} csvFilename="comparison-for-cases.csv" />}
     </ReportShell>
   );
 }

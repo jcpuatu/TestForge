@@ -5,6 +5,8 @@ import { useProjectSections } from '../useProjectSections';
 import { SectionCheckboxList } from '../SectionCheckboxList';
 import { ReportShell } from '../ReportShell';
 import { StackedStatusBar } from '../../../components/StackedStatusBar';
+import { DownloadCsvButton } from '../../../components/DownloadCsvButton';
+import { downloadTableAsCsv } from '../../../lib/downloadCsv';
 
 export function CoverageForReferencesReport({ projectId }: { projectId: string }) {
   const [sectionIds, setSectionIds] = useState<string[]>([]);
@@ -67,6 +69,21 @@ export function CoverageForReferencesReport({ projectId }: { projectId: string }
             <StackedStatusBar
               counts={{ PASSED: data.coveredCount, FAILED: 0, BLOCKED: 0, RETEST: 0, UNTESTED: data.uncoveredCount }}
               total={data.total}
+            />
+          </div>
+
+          <div className="mb-2 flex justify-end">
+            <DownloadCsvButton
+              onClick={() =>
+                downloadTableAsCsv(
+                  ['Title', 'Reference'],
+                  [
+                    ...data.references.flatMap((r) => r.cases.map((c) => [c.title, r.reference])),
+                    ...data.casesWithoutReferences.map((c) => [c.title, '']),
+                  ],
+                  'coverage-for-references.csv',
+                )
+              }
             />
           </div>
 

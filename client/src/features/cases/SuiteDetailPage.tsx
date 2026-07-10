@@ -26,6 +26,7 @@ import { SharedStepsManager } from './SharedStepsManager';
 import { CaseHistoryModal } from './CaseHistoryModal';
 import { CaseAttachments } from './CaseAttachments';
 import { CsvExportDialog } from './CsvExportDialog';
+import { PrintButton } from '../../components/PrintButton';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, downloadFeatureFile, importCasesCsv, importFeatureFile } from '../../api/csv';
 
@@ -428,8 +429,9 @@ export function SuiteDetailPage() {
             )}
           </div>
         )}
-        <div className="flex items-center gap-3">
+        <div className="no-print flex items-center gap-3">
           {csvMessage && <span className="text-xs text-slate-500 dark:text-slate-400">{csvMessage}</span>}
+          <PrintButton />
           <button
             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
             onClick={() => setShowSharedStepsManager(true)}
@@ -551,7 +553,7 @@ export function SuiteDetailPage() {
                 <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                   {filtering ? 'All test cases (filtered)' : sections.find((s) => s.id === activeSectionId)?.name}
                 </h2>
-                <div className="flex items-center gap-3">
+                <div className="no-print flex items-center gap-3">
                   {canManageStructure && (
                     <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                       <input
@@ -579,7 +581,7 @@ export function SuiteDetailPage() {
                 </div>
               </div>
 
-              <div className="mb-3">
+              <div className="no-print mb-3">
                 <CaseFilterBar
                   sections={sections}
                   users={usersQuery.data?.users ?? []}

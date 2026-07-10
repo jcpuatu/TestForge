@@ -8,6 +8,7 @@ import { Button } from '../../components/Button';
 import { Badge } from '../../components/Badge';
 import { Field, Input, Label, Select } from '../../components/Input';
 import { ApiError } from '../../lib/apiClient';
+import { PrintButton } from '../../components/PrintButton';
 
 function toDateInput(iso: string | null): string {
   return iso ? iso.slice(0, 10) : '';
@@ -165,9 +166,12 @@ export function MilestonesTab() {
 
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900 dark:text-slate-100">Milestones</h1>
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Milestones</h1>
+        <PrintButton />
+      </div>
       {canManage && (
-        <form onSubmit={handleSubmit} className="mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <form onSubmit={handleSubmit} className="no-print mb-6 flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <div className="flex-1">
             <Field>
               <Label htmlFor="milestone-name">Name</Label>

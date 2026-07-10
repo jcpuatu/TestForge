@@ -8,6 +8,8 @@ import { DateRangePresetPicker } from '../DateRangePresetPicker';
 import { ReportShell } from '../ReportShell';
 import { ActivityOverTimeChart } from '../../../components/ActivityOverTimeChart';
 import { Select } from '../../../components/Input';
+import { DownloadCsvButton } from '../../../components/DownloadCsvButton';
+import { downloadTableAsCsv } from '../../../lib/downloadCsv';
 
 export function ActivitySummaryReport({ projectId }: { projectId: string }) {
   const [preset, setPreset] = useState<DateRangePreset>('thisWeek');
@@ -104,6 +106,17 @@ export function ActivitySummaryReport({ projectId }: { projectId: string }) {
             </div>
           )}
 
+          <div className="mb-2 flex justify-end">
+            <DownloadCsvButton
+              onClick={() =>
+                downloadTableAsCsv(
+                  ['Title', 'Section', 'Change', 'Date'],
+                  data.cases.map((c) => [c.title, c.sectionName ?? '', c.changeType, new Date(c.at).toLocaleDateString()]),
+                  'activity-summary.csv',
+                )
+              }
+            />
+          </div>
           <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
             {data.cases.slice(0, 100).map((c) => (
               <div key={`${c.id}-${c.changeType}`} className="flex items-center justify-between p-2.5 text-sm">

@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { StackedStatusBar, STATUS_LEGEND } from '../../../components/StackedStatusBar';
 import { ActivityOverTimeChart } from '../../../components/ActivityOverTimeChart';
 import { StatusBadge } from '../../../components/Badge';
+import { DownloadCsvButton } from '../../../components/DownloadCsvButton';
+import { downloadTableAsCsv } from '../../../lib/downloadCsv';
 import type { ResultStatus } from '../../../api/runs';
 import type { SummaryReportData } from '../../../api/summaryReports';
 
@@ -9,8 +12,22 @@ import type { SummaryReportData } from '../../../api/summaryReports';
 // server already resolved for whichever scope the caller picked. Reuses STATUS_LEGEND's
 // established status color mapping for the activity chart's per-status series, rather than
 // inventing a new palette.
-export function SummaryReportView({ data }: { data: SummaryReportData }) {
+export function SummaryReportView({ data, csvFilename }: { data: SummaryReportData; csvFilename: string }) {
   const counts = data.statusCounts as Record<ResultStatus, number>;
+  // Click-to-filter drilldown (Phase K) — clicking a status segment in the bar below filters
+  // the Tests list to that status; clicking the same segment again clears it. Real TestRail
+  // opens the filtered view in a new tab; filtering the already-visible list in place is a
+  // deliberate simplification that fits better in a single-page app.
+  const [statusFilter, setStatusFilter] = useState<ResultStatus | null>(null);
+  const visibleTests = statusFilter ? data.tests.filter((t) => t.status === statusFilter) : data.tests;
+
+  function handleDownload() {
+    downloadTableAsCsv(
+      ['Title', 'Status', 'Assigned To', 'Run'],
+      visibleTests.map((t) => [t.title, t.status, t.assignedTo ?? '', data.runs.find((r) => r.id === t.runId)?.name ?? '']),
+      csvFilename,
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -19,13 +36,22 @@ export function SummaryReportView({ data }: { data: SummaryReportData }) {
           {data.total} test(s) across {data.runs.length} run(s)
           {data.passRate !== null && <> · {Math.round(data.passRate * 100)}% pass rate</>}
         </p>
-        <StackedStatusBar counts={counts} total={data.total} height={14} />
+        <StackedStatusBar
+          counts={counts}
+          total={data.total}
+          height={14}
+          onSegmentClick={(status) => setStatusFilter((prev) => (prev === status ? null : status))}
+        />
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
           {STATUS_LEGEND.filter((s) => counts[s.status] > 0).map((s) => (
-            <span key={s.status} className="inline-flex items-center gap-1.5">
+            <button
+              key={s.status}
+              onClick={() => setStatusFilter((prev) => (prev === s.status ? null : s.status))}
+              className={`inline-flex items-center gap-1.5 rounded px-1 ${statusFilter === s.status ? 'bg-slate-100 dark:bg-slate-700 font-medium text-slate-900 dark:text-slate-100' : ''}`}
+            >
               <span className={`inline-block h-2 w-2 rounded-full ${s.color}`} />
               {s.status}: {counts[s.status]}
-            </span>
+            </button>
           ))}
         </div>
       </div>
@@ -71,9 +97,19 @@ export function SummaryReportView({ data }: { data: SummaryReportData }) {
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Tests</p>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Tests
+            {statusFilter && (
+              <button onClick={() => setStatusFilter(null)} className="no-print ml-2 font-normal text-blue-600 dark:text-blue-400 hover:underline">
+                filtered to {statusFilter} — clear
+              </button>
+            )}
+          </p>
+          <DownloadCsvButton onClick={handleDownload} />
+        </div>
         <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-          {data.tests.map((t) => (
+          {visibleTests.map((t) => (
             <div key={t.id} className="flex items-center justify-between p-2.5 text-sm">
               <span className="text-slate-700 dark:text-slate-300">{t.title}</span>
               <span className="flex items-center gap-2">
@@ -82,7 +118,7 @@ export function SummaryReportView({ data }: { data: SummaryReportData }) {
               </span>
             </div>
           ))}
-          {data.tests.length === 0 && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No tests in scope.</p>}
+          {visibleTests.length === 0 && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No tests in scope.</p>}
         </div>
       </div>
     </div>

@@ -85,3 +85,42 @@ describe('test assignment and /me/tests', () => {
     expect(asTester.body.tests.find((t: { id: string }) => t.id === tests.body.tests[0].id)).toBeUndefined();
   });
 });
+
+describe('/me/workload', () => {
+  it('is forbidden for a TESTER', async () => {
+    const res = await request(app).get('/api/v1/me/workload').set(authAs(testerToken));
+    expect(res.status).toBe(403);
+  });
+
+  it('counts active-run tests per assignee for an ADMIN, excluding closed-run assignments', async () => {
+    // A dedicated user, not the shared `testerId` — other tests in this file assign tests to
+    // `testerId` in runs that are never closed, so its workload count would depend on test
+    // execution order within this file if reused here.
+    const workloadUser = await prisma.user.create({
+      data: { email: 'me-workload@example.com', name: 'Workload Tester', role: 'TESTER', passwordHash: await hashPassword('TesterPass123!') },
+    });
+
+    const project = await request(app).post('/api/v1/projects').set(authAs(adminToken)).send({ name: 'Workload Project' });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(authAs(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(authAs(adminToken)).send({ name: 'Section' });
+    await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(authAs(adminToken)).send({ title: 'Case A' });
+    await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(authAs(adminToken)).send({ title: 'Case B' });
+
+    await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/runs`)
+      .set(authAs(adminToken))
+      .send({ name: 'Active Run', suiteId: suite.body.suite.id, assignedToId: workloadUser.id });
+    const closedRun = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/runs`)
+      .set(authAs(adminToken))
+      .send({ name: 'Closed Run', suiteId: suite.body.suite.id, assignedToId: workloadUser.id });
+    await request(app).post(`/api/v1/runs/${closedRun.body.run.id}/close`).set(authAs(adminToken));
+
+    const res = await request(app).get('/api/v1/me/workload').set(authAs(adminToken));
+    expect(res.status).toBe(200);
+    const entry = res.body.workload.find((w: { userId: string }) => w.userId === workloadUser.id);
+    expect(entry).toBeTruthy();
+    expect(entry.count).toBe(2); // both cases in the active run only, not the closed run
+    expect(entry.userName).toBe('Workload Tester');
+  });
+});

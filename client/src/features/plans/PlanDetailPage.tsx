@@ -17,6 +17,7 @@ import { useToast } from '../../components/Toast';
 import { ApiError } from '../../lib/apiClient';
 import { ConfigurationsManager } from './ConfigurationsManager';
 import { RerunDialog } from '../runs/RerunDialog';
+import { PrintButton } from '../../components/PrintButton';
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>();
@@ -136,9 +137,12 @@ export function PlanDetailPage() {
 
   return (
     <div>
-      <Link to={`/projects/${plan.projectId}/plans`} className="mb-4 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
-        ← Back to plans
-      </Link>
+      <div className="no-print mb-4 flex items-center justify-between">
+        <Link to={`/projects/${plan.projectId}/plans`} className="inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline">
+          ← Back to plans
+        </Link>
+        <PrintButton />
+      </div>
       {editingName !== null ? (
         <form
           onSubmit={(e) => {
@@ -165,7 +169,7 @@ export function PlanDetailPage() {
         <div className="group mb-1 flex items-center gap-2">
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{plan.name}</h1>
           {canManage && (
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+            <div className="no-print flex gap-1 opacity-0 group-hover:opacity-100">
               <button
                 onClick={() => setEditingName(plan.name)}
                 aria-label="Rename plan"
@@ -253,7 +257,7 @@ export function PlanDetailPage() {
       </div>
 
       {canManage && (
-        <div className="mb-4 flex gap-2">
+        <div className="no-print mb-4 flex gap-2">
           <Button onClick={() => setShowForm((v) => !v)}>+ Add run to plan</Button>
           {plan.runs.length > 0 && (
             <Button variant="secondary" onClick={() => setShowRerun(true)}>
