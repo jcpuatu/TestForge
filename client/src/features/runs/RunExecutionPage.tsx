@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bug, ChevronDown, ChevronRight, Filter } from 'lucide-react';
@@ -16,7 +16,9 @@ import { StackedStatusBar, StatusLegend } from '../../components/StackedStatusBa
 import { DraftDefectPanel } from './DraftDefectPanel';
 import { RerunDialog } from './RerunDialog';
 
-const STATUS_OPTIONS: ResultStatus[] = ['PASSED', 'FAILED', 'BLOCKED', 'RETEST'];
+// PASSED isn't in this list — it's the dedicated "Pass & Next" button instead (matches real
+// TestRail: pass is always the fast, advancing path; the others are deliberate second choices).
+const STATUS_OPTIONS: ResultStatus[] = ['FAILED', 'BLOCKED', 'RETEST'];
 const STATUS_BUTTON_CLASSES: Record<ResultStatus, string> = {
   UNTESTED: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600',
   PASSED: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-800/60 border border-emerald-200 dark:border-emerald-800',
@@ -151,6 +153,9 @@ function TestRow({
   knownDefectIds,
   selected,
   onToggleSelect,
+  expanded,
+  onToggleExpand,
+  onAdvance,
 }: {
   test: runsApi.RunCase;
   run: TestRun;
@@ -162,9 +167,11 @@ function TestRow({
   knownDefectIds: string[];
   selected: boolean;
   onToggleSelect: () => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onAdvance: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
   const [defects, setDefects] = useState('');
   const [showDraft, setShowDraft] = useState(false);
@@ -196,6 +203,34 @@ function TestRow({
     },
   });
 
+  function submitStatus(status: ResultStatus, advance?: boolean) {
+    if (submitAssigneeId !== (test.assignedTo?.id ?? '')) {
+      reassign.mutate(submitAssigneeId || null);
+    }
+    submitResult.mutate(status, advance ? { onSuccess: () => onAdvance() } : undefined);
+  }
+
+  // Keyboard shortcuts only act on the currently-expanded row, and only while a text field isn't
+  // focused (so typing "pass" into the Comment box doesn't fire a submit). P is treated as
+  // "Pass & Next" since a keyboard-driven flow is precisely for rapid sequential testing; F/B/R
+  // don't auto-advance since a failure usually needs a comment/defect added before moving on.
+  useEffect(() => {
+    if (!expanded || !canSubmit) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      const map: Partial<Record<string, ResultStatus>> = { p: 'PASSED', f: 'FAILED', b: 'BLOCKED', r: 'RETEST' };
+      const status = map[e.key.toLowerCase()];
+      if (status) {
+        e.preventDefault();
+        submitStatus(status, status === 'PASSED');
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, canSubmit, submitAssigneeId, test.id, test.assignedTo?.id]);
+
   const reassign = useMutation({
     mutationFn: (assignedToId: string | null) => runsApi.reassignTest(test.id, assignedToId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', test.runId, 'tests'] }),
@@ -204,7 +239,7 @@ function TestRow({
   const hasOpenDefect = (test.status === 'FAILED' || test.status === 'BLOCKED') && !!test.latestDefects;
 
   return (
-    <div className="border-b border-slate-200 dark:border-slate-700 p-3 last:border-b-0">
+    <div id={`test-row-${test.id}`} className="border-b border-slate-200 dark:border-slate-700 p-3 last:border-b-0">
       <div className="flex items-center justify-between gap-3">
         {canAssign && (
           <input
@@ -216,7 +251,7 @@ function TestRow({
             aria-label={`Select ${test.titleSnapshot}`}
           />
         )}
-        <button className="flex flex-1 items-center gap-2 text-left" onClick={() => setExpanded((v) => !v)}>
+        <button className="flex flex-1 items-center gap-2 text-left" onClick={onToggleExpand}>
           <PriorityBadge priority={test.priority} />
           <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{test.titleSnapshot}</span>
           {hasOpenDefect && <Bug className="h-3.5 w-3.5 shrink-0 text-red-500 dark:text-red-400" aria-label="Has linked defect" />}
@@ -366,21 +401,24 @@ function TestRow({
                 </Field>
               )}
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  disabled={submitResult.isPending}
+                  onClick={() => submitStatus('PASSED', true)}
+                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                >
+                  Pass &amp; Next
+                </button>
                 {STATUS_OPTIONS.map((status) => (
                   <button
                     key={status}
                     disabled={submitResult.isPending}
-                    onClick={() => {
-                      if (submitAssigneeId !== (test.assignedTo?.id ?? '')) {
-                        reassign.mutate(submitAssigneeId || null);
-                      }
-                      submitResult.mutate(status);
-                    }}
+                    onClick={() => submitStatus(status)}
                     className={`rounded-md px-3 py-1.5 text-xs font-semibold ${STATUS_BUTTON_CLASSES[status]}`}
                   >
                     {status}
                   </button>
                 ))}
+                <span className="text-xs text-slate-400 dark:text-slate-500">Shortcuts: P/F/B/R</span>
                 <button
                   type="button"
                   onClick={() => setShowDraft((v) => !v)}
@@ -455,6 +493,7 @@ export function RunExecutionPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showRerun, setShowRerun] = useState(false);
+  const [activeTestId, setActiveTestId] = useState<string | null>(null);
 
   const runQuery = useQuery({ queryKey: ['runs', runId], queryFn: () => runsApi.getRun(runId!), enabled: !!runId });
   const testsQuery = useQuery({ queryKey: ['runs', runId, 'tests'], queryFn: () => runsApi.listTests(runId!), enabled: !!runId });
@@ -533,6 +572,23 @@ export function RunExecutionPage() {
 
   function toggleSelectAll() {
     setSelectedIds((prev) => (prev.size === visibleTests.length ? new Set() : new Set(visibleTests.map((t) => t.id))));
+  }
+
+  // Pass & Next: jump to the next UNTESTED test after the one just submitted, wrapping to the
+  // start of the visible list. Computed against the pre-refetch `visibleTests` snapshot still in
+  // this closure — invalidation triggers a background refetch, not a synchronous one, so this
+  // reflects what the user saw right before submitting, which is what "next" should mean here.
+  function advanceToNext(afterTestId: string) {
+    const idx = visibleTests.findIndex((t) => t.id === afterTestId);
+    const next =
+      visibleTests.slice(idx + 1).find((t) => t.status === 'UNTESTED') ??
+      visibleTests.find((t) => t.id !== afterTestId && t.status === 'UNTESTED');
+    setActiveTestId(next?.id ?? null);
+    if (next) {
+      requestAnimationFrame(() => {
+        document.getElementById(`test-row-${next.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
   }
 
   return (
@@ -737,6 +793,9 @@ export function RunExecutionPage() {
             knownDefectIds={knownDefectIds}
             selected={selectedIds.has(test.id)}
             onToggleSelect={() => toggleSelect(test.id)}
+            expanded={activeTestId === test.id}
+            onToggleExpand={() => setActiveTestId(activeTestId === test.id ? null : test.id)}
+            onAdvance={() => advanceToNext(test.id)}
           />
         ))}
         {visibleTests.length === 0 && (
