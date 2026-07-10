@@ -66,3 +66,19 @@ describe('per-step results', () => {
     expect(submitted.body.result.stepResults).toBeNull();
   });
 });
+
+describe('version and elapsed time', () => {
+  it('accepts and returns version and elapsedMs on a result', async () => {
+    const testId = await seedRunWithStepsCase();
+    const submitted = await request(app)
+      .post(`/api/v1/tests/${testId}/results`)
+      .set(auth(adminToken))
+      .send({ status: 'PASSED', version: '1.2.3', elapsedMs: 45000 });
+    expect(submitted.status).toBe(201);
+    expect(submitted.body.result.version).toBe('1.2.3');
+    expect(submitted.body.result.elapsedMs).toBe(45000);
+
+    const history = await request(app).get(`/api/v1/tests/${testId}/results`).set(auth(adminToken));
+    expect(history.body.results[0]).toMatchObject({ version: '1.2.3', elapsedMs: 45000 });
+  });
+});

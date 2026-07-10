@@ -387,6 +387,7 @@ model Result {
   status      String
   comment     String?
   defects     String?
+  version     String?
   elapsedMs   Int?
   stepResults String? // STEPS-template tests only — JSON array of { status, actual }, positionally matching RunCase.stepsSnapshot
   enteredById String?

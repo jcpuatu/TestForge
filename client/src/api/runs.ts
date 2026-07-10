@@ -55,6 +55,7 @@ export interface Result {
   status: ResultStatus;
   comment: string | null;
   defects: string | null;
+  version: string | null;
   elapsedMs: number | null;
   stepResults: StepResult[] | null;
   createdAt: string;
@@ -117,7 +118,7 @@ export function listResults(testId: string) {
 
 export function submitResult(
   testId: string,
-  input: { status: ResultStatus; comment?: string; defects?: string; stepResults?: StepResult[] },
+  input: { status: ResultStatus; comment?: string; defects?: string; version?: string; elapsedMs?: number; stepResults?: StepResult[] },
 ) {
   return apiFetch<{ result: Result }>(`/tests/${testId}/results`, { method: 'POST', body: input });
 }

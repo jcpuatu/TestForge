@@ -32,6 +32,13 @@ interface AppliedFilter {
   showUnassigned: boolean;
 }
 
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function SummaryBar({ summary }: { summary: runsApi.RunSummary }) {
   if (summary.total === 0) return null;
   return (
@@ -178,6 +185,10 @@ function TestRow({
   const [stepStatuses, setStepStatuses] = useState<Record<number, ResultStatus>>({});
   const [stepActuals, setStepActuals] = useState<Record<number, string>>({});
   const [submitAssigneeId, setSubmitAssigneeId] = useState(test.assignedTo?.id ?? '');
+  const [version, setVersion] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState('');
+  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null);
+  const [timerTick, setTimerTick] = useState(0);
 
   const resultsQuery = useQuery({
     queryKey: ['tests', test.id, 'results'],
@@ -185,17 +196,47 @@ function TestRow({
     enabled: expanded,
   });
 
+  // Re-renders once a second while the timer is running so the live "M:SS" display advances;
+  // the tick value itself is never read, only its identity change matters.
+  useEffect(() => {
+    if (timerStartedAt === null) return;
+    const interval = setInterval(() => setTimerTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [timerStartedAt]);
+
+  function toggleTimer() {
+    if (timerStartedAt === null) {
+      setTimerStartedAt(Date.now());
+    } else {
+      setElapsedSeconds(String(Math.floor((Date.now() - timerStartedAt) / 1000)));
+      setTimerStartedAt(null);
+    }
+  }
+
+  const liveSeconds = timerStartedAt !== null ? Math.floor((Date.now() - timerStartedAt) / 1000) : null;
+
   const submitResult = useMutation({
     mutationFn: (status: ResultStatus) => {
       const stepResults =
         test.templateSnapshot === 'STEPS' && test.stepsSnapshot && test.stepsSnapshot.length > 0
           ? test.stepsSnapshot.map((_, i) => ({ status: stepStatuses[i] ?? 'UNTESTED', actual: stepActuals[i] || undefined }))
           : undefined;
-      return runsApi.submitResult(test.id, { status, comment: comment || undefined, defects: defects || undefined, stepResults });
+      const elapsedMs = elapsedSeconds ? Number(elapsedSeconds) * 1000 : undefined;
+      return runsApi.submitResult(test.id, {
+        status,
+        comment: comment || undefined,
+        defects: defects || undefined,
+        version: version || undefined,
+        elapsedMs,
+        stepResults,
+      });
     },
     onSuccess: () => {
       setComment('');
       setDefects('');
+      setVersion('');
+      setElapsedSeconds('');
+      setTimerStartedAt(null);
       setStepStatuses({});
       setStepActuals({});
       queryClient.invalidateQueries({ queryKey: ['runs'] });
@@ -383,6 +424,39 @@ function TestRow({
                   ))}
                 </datalist>
               </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field>
+                  <Label htmlFor={`version-${test.id}`}>Version (optional)</Label>
+                  <Input id={`version-${test.id}`} placeholder="1.2.3" value={version} onChange={(e) => setVersion(e.target.value)} />
+                </Field>
+                <Field>
+                  <Label htmlFor={`elapsed-${test.id}`}>Elapsed (seconds)</Label>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24">
+                      <Input
+                        id={`elapsed-${test.id}`}
+                        type="number"
+                        min={0}
+                        placeholder="0"
+                        value={timerStartedAt !== null ? String(liveSeconds) : elapsedSeconds}
+                        disabled={timerStartedAt !== null}
+                        onChange={(e) => setElapsedSeconds(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleTimer}
+                      className={`rounded-md px-2.5 py-1.5 text-xs font-semibold ${
+                        timerStartedAt !== null
+                          ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                          : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-500'
+                      }`}
+                    >
+                      {timerStartedAt !== null ? 'Stop timer' : 'Start timer'}
+                    </button>
+                  </div>
+                </Field>
+              </div>
               {canAssign && (
                 <Field>
                   <Label htmlFor={`submit-assignee-${test.id}`}>Assign to</Label>
@@ -465,6 +539,8 @@ function TestRow({
                       )}
                       <p className="text-slate-400 dark:text-slate-500">
                         {r.enteredBy?.name} · {new Date(r.createdAt).toLocaleString()}
+                        {r.version && <> · v{r.version}</>}
+                        {r.elapsedMs != null && <> · {formatElapsed(r.elapsedMs)}</>}
                       </p>
                     </div>
                   </div>
