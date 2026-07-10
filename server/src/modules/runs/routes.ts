@@ -4,8 +4,8 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
-import { createRunSchema, updateRunSchema } from './schema';
-import { createRun, createRunsForConfigs, getRunSummary } from './service';
+import { createRunSchema, rerunSchema, updateRunSchema } from './schema';
+import { createRun, createRunsForConfigs, getRunSummary, rerunRun } from './service';
 import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
@@ -125,6 +125,16 @@ runsRouter.post(
       ...summary,
     });
     res.json({ run });
+  }),
+);
+
+runsRouter.post(
+  '/:id/rerun',
+  requireRole(...MANAGE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = rerunSchema.parse(req.body);
+    const run = await rerunRun(req.params.id, body, req.user!.id);
+    res.status(201).json({ run });
   }),
 );
 

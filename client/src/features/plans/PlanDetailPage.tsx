@@ -5,6 +5,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import * as plansApi from '../../api/plans';
 import * as suitesApi from '../../api/suites';
 import * as configApi from '../../api/configurations';
+import type { ResultStatus } from '../../api/runs';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
 import { Badge } from '../../components/Badge';
@@ -14,6 +15,7 @@ import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { ApiError } from '../../lib/apiClient';
 import { ConfigurationsManager } from './ConfigurationsManager';
+import { RerunDialog } from '../runs/RerunDialog';
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>();
@@ -35,6 +37,7 @@ export function PlanDetailPage() {
   const [referenceId, setReferenceId] = useState('');
   const [configIds, setConfigIds] = useState<string[]>([]);
   const [showConfigManager, setShowConfigManager] = useState(false);
+  const [showRerun, setShowRerun] = useState(false);
 
   const planQuery = useQuery({ queryKey: ['plans', planId], queryFn: () => plansApi.getPlan(planId!), enabled: !!planId });
   const suitesQuery = useQuery({
@@ -101,6 +104,20 @@ export function PlanDetailPage() {
       navigate(`/projects/${planQuery.data!.plan.projectId}/plans`);
     },
     onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to delete plan', 'error'),
+  });
+
+  const rerunPlan = useMutation({
+    mutationFn: (input: { statuses: ResultStatus[]; copyAssignees: boolean }) => plansApi.rerunPlan(planId!, input),
+    onSuccess: (res) => {
+      setShowRerun(false);
+      queryClient.invalidateQueries({ queryKey: ['plans', planId] });
+      showToast(
+        res.skipped > 0
+          ? `Created ${res.runs.length} rerun(s) — skipped ${res.skipped} run(s) with no matching tests.`
+          : `Created ${res.runs.length} rerun(s).`,
+      );
+    },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rerun plan', 'error'),
   });
 
   function handleSubmit(e: FormEvent) {
@@ -230,10 +247,22 @@ export function PlanDetailPage() {
       </div>
 
       {canManage && (
-        <div className="mb-4">
+        <div className="mb-4 flex gap-2">
           <Button onClick={() => setShowForm((v) => !v)}>+ Add run to plan</Button>
+          {plan.runs.length > 0 && (
+            <Button variant="secondary" onClick={() => setShowRerun(true)}>
+              Rerun plan
+            </Button>
+          )}
         </div>
       )}
+
+      <RerunDialog
+        open={showRerun}
+        onClose={() => setShowRerun(false)}
+        onSubmit={(input) => rerunPlan.mutate(input)}
+        submitting={rerunPlan.isPending}
+      />
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mb-6 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">

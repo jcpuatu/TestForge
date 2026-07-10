@@ -4,7 +4,8 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
-import { createPlanSchema, updatePlanSchema } from './schema';
+import { createPlanSchema, rerunPlanSchema, updatePlanSchema } from './schema';
+import { rerunPlan } from './service';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 
@@ -87,5 +88,15 @@ plansRouter.delete(
   asyncHandler(async (req, res) => {
     await prisma.testPlan.delete({ where: { id: req.params.id } });
     res.status(204).send();
+  }),
+);
+
+plansRouter.post(
+  '/:id/rerun',
+  requireRole(...MANAGE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = rerunPlanSchema.parse(req.body);
+    const result = await rerunPlan(req.params.id, body, req.user!.id);
+    res.status(201).json(result);
   }),
 );

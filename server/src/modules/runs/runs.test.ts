@@ -80,6 +80,39 @@ describe('runs and results', () => {
     expect(blocked.status).toBe(400);
   });
 
+  it('reruns only the tests matching the selected statuses, cloning their snapshots not live case content', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app).post(`/api/v1/projects/${projectId}/runs`).set(auth(adminToken)).send({ name: 'Original Run', suiteId });
+    const runId = run.body.run.id;
+    const tests = await request(app).get(`/api/v1/runs/${runId}/tests`).set(auth(adminToken));
+    const [testA, testB] = tests.body.tests;
+
+    await request(app).post(`/api/v1/tests/${testA.id}/results`).set(auth(adminToken)).send({ status: 'FAILED' });
+    await request(app).post(`/api/v1/tests/${testB.id}/results`).set(auth(adminToken)).send({ status: 'PASSED' });
+
+    // Edit the source case after the run was created — the rerun must NOT pick up this edit.
+    await request(app).patch(`/api/v1/cases/${testA.caseId}`).set(auth(adminToken)).send({ title: 'Edited after run' });
+
+    const rerun = await request(app)
+      .post(`/api/v1/runs/${runId}/rerun`)
+      .set(auth(adminToken))
+      .send({ statuses: ['FAILED', 'BLOCKED'] });
+    expect(rerun.status).toBe(201);
+    expect(rerun.body.run.name).toBe('Original Run (Rerun)');
+
+    const rerunTests = await request(app).get(`/api/v1/runs/${rerun.body.run.id}/tests`).set(auth(adminToken));
+    expect(rerunTests.body.tests).toHaveLength(1);
+    expect(rerunTests.body.tests[0].titleSnapshot).toBe(testA.titleSnapshot);
+    expect(rerunTests.body.tests[0].titleSnapshot).not.toBe('Edited after run');
+  });
+
+  it('rejects a rerun when no tests match the selected statuses', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const run = await request(app).post(`/api/v1/projects/${projectId}/runs`).set(auth(adminToken)).send({ name: 'All Untested', suiteId });
+    const rerun = await request(app).post(`/api/v1/runs/${run.body.run.id}/rerun`).set(auth(adminToken)).send({ statuses: ['FAILED'] });
+    expect(rerun.status).toBe(400);
+  });
+
   it('supports a partial run with only selected case ids', async () => {
     const { projectId, suiteId } = await seedSuiteWithCases();
     const cases = await request(app).get(`/api/v1/suites/${suiteId}/cases`).set(auth(adminToken));

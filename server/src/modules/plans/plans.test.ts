@@ -73,4 +73,24 @@ describe('plans', () => {
     const blocked = await request(app).patch(`/api/v1/plans/${planId}`).set(auth()).send({ endDate: '2026-02-01T00:00:00.000Z' });
     expect(blocked.status).toBe(400);
   });
+
+  it('reruns every run in a plan, skipping ones with no matching tests, and attaches new runs to the same plan', async () => {
+    const plan = await request(app).post(`/api/v1/projects/${projectId}/plans`).set(auth()).send({ name: 'Plan To Rerun' });
+    const planId = plan.body.plan.id;
+
+    const runA = await request(app).post(`/api/v1/plans/${planId}/runs`).set(auth()).send({ name: 'Run A', suiteId });
+    const runB = await request(app).post(`/api/v1/plans/${planId}/runs`).set(auth()).send({ name: 'Run B', suiteId });
+    const testsA = await request(app).get(`/api/v1/runs/${runA.body.run.id}/tests`).set(auth());
+    await request(app).post(`/api/v1/tests/${testsA.body.tests[0].id}/results`).set(auth()).send({ status: 'FAILED' });
+    // Run B is left fully UNTESTED, so it has nothing matching FAILED — should be skipped, not error the batch.
+
+    const rerun = await request(app).post(`/api/v1/plans/${planId}/rerun`).set(auth()).send({ statuses: ['FAILED'] });
+    expect(rerun.status).toBe(201);
+    expect(rerun.body.runs).toHaveLength(1);
+    expect(rerun.body.skipped).toBe(1);
+    void runB;
+
+    const detail = await request(app).get(`/api/v1/plans/${planId}`).set(auth());
+    expect(detail.body.plan.runs.map((r: { name: string }) => r.name).sort()).toEqual(['Run A', 'Run A (Rerun)', 'Run B']);
+  });
 });

@@ -80,6 +80,10 @@ export function updateRun(id: string, input: { name?: string; description?: stri
   return apiFetch<{ run: TestRun }>(`/runs/${id}`, { method: 'PATCH', body: input });
 }
 
+export function rerunRun(id: string, input: { statuses: ResultStatus[]; copyAssignees: boolean; name?: string }) {
+  return apiFetch<{ run: TestRun }>(`/runs/${id}/rerun`, { method: 'POST', body: input });
+}
+
 export function closeRun(id: string) {
   return apiFetch<{ run: TestRun }>(`/runs/${id}/close`, { method: 'POST' });
 }

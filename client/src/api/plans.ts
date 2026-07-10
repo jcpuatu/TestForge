@@ -1,5 +1,5 @@
 import { apiFetch } from '../lib/apiClient';
-import type { TestRun } from './runs';
+import type { ResultStatus, TestRun } from './runs';
 
 export interface TestPlan {
   id: string;
@@ -44,4 +44,8 @@ export function deletePlan(id: string) {
 
 export function createPlanRun(planId: string, input: { name: string; suiteId: string; caseIds?: string[] }) {
   return apiFetch<{ run: TestRun }>(`/plans/${planId}/runs`, { method: 'POST', body: input });
+}
+
+export function rerunPlan(planId: string, input: { statuses: ResultStatus[]; copyAssignees: boolean }) {
+  return apiFetch<{ runs: TestRun[]; skipped: number }>(`/plans/${planId}/rerun`, { method: 'POST', body: input });
 }

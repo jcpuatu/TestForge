@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bug, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import * as runsApi from '../../api/runs';
 import type { ResultStatus, TestRun } from '../../api/runs';
@@ -14,6 +14,7 @@ import { DefectText } from '../../components/DefectText';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { StackedStatusBar, StatusLegend } from '../../components/StackedStatusBar';
 import { DraftDefectPanel } from './DraftDefectPanel';
+import { RerunDialog } from './RerunDialog';
 
 const STATUS_OPTIONS: ResultStatus[] = ['PASSED', 'FAILED', 'BLOCKED', 'RETEST'];
 const STATUS_BUTTON_CLASSES: Record<ResultStatus, string> = {
@@ -419,6 +420,7 @@ function TestRow({
 export function RunExecutionPage() {
   const { runId } = useParams<{ runId: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canSubmit = user?.role === 'ADMIN' || user?.role === 'LEAD' || user?.role === 'TESTER';
   const canManage = user?.role === 'ADMIN' || user?.role === 'LEAD';
   const queryClient = useQueryClient();
@@ -429,6 +431,7 @@ export function RunExecutionPage() {
   const [editingDates, setEditingDates] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [showRerun, setShowRerun] = useState(false);
 
   const runQuery = useQuery({ queryKey: ['runs', runId], queryFn: () => runsApi.getRun(runId!), enabled: !!runId });
   const testsQuery = useQuery({ queryKey: ['runs', runId, 'tests'], queryFn: () => runsApi.listTests(runId!), enabled: !!runId });
@@ -462,6 +465,14 @@ export function RunExecutionPage() {
     onSuccess: () => {
       setEditingDates(false);
       queryClient.invalidateQueries({ queryKey: ['runs', runId] });
+    },
+  });
+
+  const rerun = useMutation({
+    mutationFn: (input: { statuses: ResultStatus[]; copyAssignees: boolean }) => runsApi.rerunRun(runId!, input),
+    onSuccess: (res) => {
+      setShowRerun(false);
+      navigate(`/runs/${res.run.id}`);
     },
   });
 
@@ -579,6 +590,11 @@ export function RunExecutionPage() {
           >
             Export defects CSV
           </button>
+          {canManage && (
+            <Button variant="secondary" onClick={() => setShowRerun(true)}>
+              Rerun
+            </Button>
+          )}
           {canManage && !run.isCompleted && (
             <Button variant="secondary" onClick={() => closeRun.mutate()} disabled={closeRun.isPending}>
               Close run
@@ -592,6 +608,15 @@ export function RunExecutionPage() {
           {!canManage && run.isCompleted && <span className="text-sm text-slate-500 dark:text-slate-400">Closed</span>}
         </div>
       </div>
+
+      <RerunDialog
+        open={showRerun}
+        onClose={() => setShowRerun(false)}
+        onSubmit={(input) => rerun.mutate(input)}
+        submitting={rerun.isPending}
+        showNameField
+        defaultName={`${run.name} (Rerun)`}
+      />
 
       {summaryQuery.data && <SummaryBar summary={summaryQuery.data} />}
 

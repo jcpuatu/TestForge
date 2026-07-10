@@ -104,6 +104,66 @@ export async function createRunsForConfigs(
   return runs;
 }
 
+// Clones the ORIGINAL run's snapshots directly (title/steps/etc. as they were when that run was
+// created), never re-pulling from the live TestCase — a rerun must test the exact instructions
+// that produced the selected statuses, not a possibly-since-edited version. Matches real
+// TestRail's own rerun semantics and this project's existing run-immutability discipline.
+export async function rerunRun(
+  runId: string,
+  options: { statuses: string[]; copyAssignees: boolean; name?: string },
+  createdById: string,
+) {
+  const original = await prisma.testRun.findUnique({ where: { id: runId } });
+  if (!original) throw new NotFoundError('Run');
+
+  const matching = await prisma.runCase.findMany({
+    where: { runId, status: { in: options.statuses } },
+    orderBy: { orderIndex: 'asc' },
+  });
+  if (matching.length === 0) {
+    throw new BadRequestError('No tests in this run match the selected statuses');
+  }
+
+  const newRun = await prisma.$transaction(async (tx) => {
+    const created = await tx.testRun.create({
+      data: {
+        projectId: original.projectId,
+        suiteId: original.suiteId,
+        planId: original.planId,
+        milestoneId: original.milestoneId,
+        name: options.name || `${original.name} (Rerun)`,
+        description: original.description,
+        configLabel: original.configLabel,
+        includeAll: false,
+        createdById,
+      },
+    });
+
+    await tx.runCase.createMany({
+      data: matching.map((rc, index) => ({
+        runId: created.id,
+        caseId: rc.caseId,
+        titleSnapshot: rc.titleSnapshot,
+        templateSnapshot: rc.templateSnapshot,
+        stepsSnapshot: rc.stepsSnapshot,
+        expectedSnapshot: rc.expectedSnapshot,
+        missionSnapshot: rc.missionSnapshot,
+        goalsSnapshot: rc.goalsSnapshot,
+        bddLinesSnapshot: rc.bddLinesSnapshot,
+        priority: rc.priority,
+        assignedToId: options.copyAssignees ? rc.assignedToId : undefined,
+        orderIndex: index,
+      })),
+    });
+
+    return created;
+  });
+
+  await dispatchWebhookEvent(original.projectId, 'RUN_CREATED', { runId: newRun.id, runName: newRun.name, caseCount: matching.length });
+
+  return newRun;
+}
+
 export async function getRunSummary(runId: string) {
   const grouped = await prisma.runCase.groupBy({
     by: ['status'],

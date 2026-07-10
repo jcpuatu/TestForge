@@ -12,6 +12,12 @@ export const createRunSchema = z.object({
   caseIds: z.array(z.string()).optional(), // omit to include all cases in the suite
 });
 
+export const rerunSchema = z.object({
+  statuses: z.array(z.enum(['UNTESTED', 'PASSED', 'FAILED', 'BLOCKED', 'RETEST'])).min(1),
+  copyAssignees: z.boolean().default(false),
+  name: z.string().min(1).max(200).optional(),
+});
+
 export const updateRunSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
