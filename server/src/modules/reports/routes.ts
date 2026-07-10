@@ -3,6 +3,17 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { prisma } from '../../config/prisma-client';
 import { getActivitySummary, getCasePropertyDistribution, getCoverageForReferences, getStatusTops } from './casesReports';
+import { aggregateDefects, fetchLatestResultPerRunCase } from './runsMatrix';
+import {
+  getDefectsSummary,
+  getDefectsSummaryForCases,
+  getDefectsSummaryForReferences,
+} from './defectsReports';
+import {
+  getComparisonForCases,
+  getComparisonForReferences,
+  getResultPropertyDistribution,
+} from './resultsReports';
 
 // Mounted at /api/v1/projects/:projectId/dashboard
 export const dashboardRouter = Router({ mergeParams: true });
@@ -146,54 +157,8 @@ defectsRouter.use(requireAuth);
 defectsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const projectId = req.params.projectId;
-
-    const runCases = await prisma.runCase.findMany({
-      where: { run: { projectId } },
-      include: {
-        results: { orderBy: { createdAt: 'desc' }, take: 1 },
-        run: { select: { id: true, name: true } },
-      },
-    });
-
-    interface DefectEntry {
-      id: string;
-      count: number;
-      openCount: number;
-      resolvedCount: number;
-      lastSeenAt: string;
-      cases: { caseTitle: string; runId: string; runName: string; status: string }[];
-    }
-    const byDefect = new Map<string, DefectEntry>();
-
-    for (const rc of runCases) {
-      const latest = rc.results[0];
-      if (!latest?.defects) continue;
-      const ids = latest.defects
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      for (const id of ids) {
-        const entry = byDefect.get(id) ?? {
-          id,
-          count: 0,
-          openCount: 0,
-          resolvedCount: 0,
-          lastSeenAt: latest.createdAt.toISOString(),
-          cases: [],
-        };
-        entry.count += 1;
-        if (rc.status === 'FAILED' || rc.status === 'BLOCKED') entry.openCount += 1;
-        if (rc.status === 'PASSED') entry.resolvedCount += 1;
-        if (latest.createdAt.toISOString() > entry.lastSeenAt) entry.lastSeenAt = latest.createdAt.toISOString();
-        entry.cases.push({ caseTitle: rc.titleSnapshot, runId: rc.run.id, runName: rc.run.name, status: rc.status });
-        byDefect.set(id, entry);
-      }
-    }
-
-    const defects = [...byDefect.values()].sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
-    res.json({ defects });
+    const runCases = await fetchLatestResultPerRunCase({ run: { projectId: req.params.projectId } });
+    res.json({ defects: aggregateDefects(runCases) });
   }),
 );
 
@@ -228,5 +193,57 @@ casesReportsRouter.get(
   '/status-tops',
   asyncHandler(async (req, res) => {
     res.json(await getStatusTops(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+// Mounted at /api/v1/projects/:projectId/reports/defects — the three "Defects Reports"
+// (Summary, Summary for Cases, Summary for References), all scoped to a set of test runs.
+export const defectsReportsRouter = Router({ mergeParams: true });
+defectsReportsRouter.use(requireAuth);
+
+defectsReportsRouter.get(
+  '/summary',
+  asyncHandler(async (req, res) => {
+    res.json(await getDefectsSummary(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+defectsReportsRouter.get(
+  '/summary-for-cases',
+  asyncHandler(async (req, res) => {
+    res.json(await getDefectsSummaryForCases(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+defectsReportsRouter.get(
+  '/summary-for-references',
+  asyncHandler(async (req, res) => {
+    res.json(await getDefectsSummaryForReferences(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+// Mounted at /api/v1/projects/:projectId/reports/results — the three "Results Reports"
+// (Comparison for Cases, Comparison for References, Property Distribution).
+export const resultsReportsRouter = Router({ mergeParams: true });
+resultsReportsRouter.use(requireAuth);
+
+resultsReportsRouter.get(
+  '/comparison-for-cases',
+  asyncHandler(async (req, res) => {
+    res.json(await getComparisonForCases(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+resultsReportsRouter.get(
+  '/comparison-for-references',
+  asyncHandler(async (req, res) => {
+    res.json(await getComparisonForReferences(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+resultsReportsRouter.get(
+  '/property-distribution',
+  asyncHandler(async (req, res) => {
+    res.json(await getResultPropertyDistribution(req.params.projectId, req.query as Record<string, unknown>));
   }),
 );

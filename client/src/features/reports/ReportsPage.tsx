@@ -4,6 +4,12 @@ import { ActivitySummaryReport } from './cases/ActivitySummaryReport';
 import { CoverageForReferencesReport } from './cases/CoverageForReferencesReport';
 import { CasePropertyDistributionReport } from './cases/CasePropertyDistributionReport';
 import { StatusTopsReport } from './cases/StatusTopsReport';
+import { DefectsSummaryReport } from './defects/DefectsSummaryReport';
+import { DefectsSummaryForCasesReport } from './defects/DefectsSummaryForCasesReport';
+import { DefectsSummaryForReferencesReport } from './defects/DefectsSummaryForReferencesReport';
+import { ComparisonForCasesReport } from './results/ComparisonForCasesReport';
+import { ComparisonForReferencesReport } from './results/ComparisonForReferencesReport';
+import { ResultPropertyDistributionReport } from './results/ResultPropertyDistributionReport';
 
 interface ReportDef {
   key: string;
@@ -27,6 +33,22 @@ const CATEGORIES: ReportCategory[] = [
       { key: 'cases-coverage-references', label: 'Coverage for References', Component: CoverageForReferencesReport },
       { key: 'cases-property-distribution', label: 'Property Distribution', Component: CasePropertyDistributionReport },
       { key: 'cases-status-tops', label: 'Status Tops', Component: StatusTopsReport },
+    ],
+  },
+  {
+    label: 'Defects',
+    reports: [
+      { key: 'defects-summary', label: 'Summary', Component: DefectsSummaryReport },
+      { key: 'defects-summary-for-cases', label: 'Summary for Cases', Component: DefectsSummaryForCasesReport },
+      { key: 'defects-summary-for-references', label: 'Summary for References', Component: DefectsSummaryForReferencesReport },
+    ],
+  },
+  {
+    label: 'Results',
+    reports: [
+      { key: 'results-comparison-for-cases', label: 'Comparison for Cases', Component: ComparisonForCasesReport },
+      { key: 'results-comparison-for-references', label: 'Comparison for References', Component: ComparisonForReferencesReport },
+      { key: 'results-property-distribution', label: 'Property Distribution', Component: ResultPropertyDistributionReport },
     ],
   },
 ];
