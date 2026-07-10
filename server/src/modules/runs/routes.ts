@@ -5,7 +5,7 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createRunSchema, updateRunSchema } from './schema';
-import { createRun, getRunSummary } from './service';
+import { createRun, createRunsForConfigs, getRunSummary } from './service';
 import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
@@ -53,6 +53,22 @@ runsByPlanRouter.post(
     const body = createRunSchema.parse({ ...req.body, planId: plan.id });
     const run = await createRun(plan.projectId, body, req.user!.id);
     res.status(201).json({ run });
+  }),
+);
+
+runsByPlanRouter.post(
+  '/by-config',
+  requireRole(...MANAGE_ROLES),
+  asyncHandler(async (req, res) => {
+    const plan = await prisma.testPlan.findUnique({ where: { id: req.params.planId } });
+    if (!plan) throw new NotFoundError('Plan');
+    const { configIds, ...rest } = req.body ?? {};
+    if (!Array.isArray(configIds) || configIds.length === 0) {
+      throw new BadRequestError('configIds must be a non-empty array');
+    }
+    const body = createRunSchema.omit({ configLabel: true }).parse({ ...rest, planId: plan.id });
+    const runs = await createRunsForConfigs(plan.projectId, body, configIds, req.user!.id);
+    res.status(201).json({ runs });
   }),
 );
 

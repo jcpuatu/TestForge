@@ -75,6 +75,35 @@ export async function createRun(projectId: string, input: CreateRunInput, create
   return run;
 }
 
+// One run per selected config, each named "<name> (<config>)" and tagged via the existing
+// configLabel free-text field ("<group>: <config>"). Deliberately simpler than real TestRail's
+// full cross-group combination matrix — selecting configs across multiple groups still yields
+// one run per config, not a cartesian product across groups.
+export async function createRunsForConfigs(
+  projectId: string,
+  input: Omit<CreateRunInput, 'configLabel'>,
+  configIds: string[],
+  createdById: string,
+) {
+  const configs = await prisma.config.findMany({
+    where: { id: { in: configIds } },
+    include: { configGroup: true },
+  });
+  if (configs.length !== configIds.length) throw new NotFoundError('Configuration');
+  if (configs.some((c) => c.configGroup.projectId !== projectId)) throw new BadRequestError('Configuration does not belong to this project');
+
+  const runs = [];
+  for (const config of configs) {
+    const run = await createRun(
+      projectId,
+      { ...input, name: `${input.name} (${config.name})`, configLabel: `${config.configGroup.name}: ${config.name}` },
+      createdById,
+    );
+    runs.push(run);
+  }
+  return runs;
+}
+
 export async function getRunSummary(runId: string) {
   const grouped = await prisma.runCase.groupBy({
     by: ['status'],

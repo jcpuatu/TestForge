@@ -4,13 +4,16 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
 import * as plansApi from '../../api/plans';
 import * as suitesApi from '../../api/suites';
+import * as configApi from '../../api/configurations';
 import { useAuth } from '../auth/AuthContext';
 import { Button } from '../../components/Button';
 import { Badge } from '../../components/Badge';
 import { Field, Input, Label, Select } from '../../components/Input';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { ApiError } from '../../lib/apiClient';
+import { ConfigurationsManager } from './ConfigurationsManager';
 
 export function PlanDetailPage() {
   const { planId } = useParams<{ planId: string }>();
@@ -30,6 +33,8 @@ export function PlanDetailPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [referenceId, setReferenceId] = useState('');
+  const [configIds, setConfigIds] = useState<string[]>([]);
+  const [showConfigManager, setShowConfigManager] = useState(false);
 
   const planQuery = useQuery({ queryKey: ['plans', planId], queryFn: () => plansApi.getPlan(planId!), enabled: !!planId });
   const suitesQuery = useQuery({
@@ -37,12 +42,26 @@ export function PlanDetailPage() {
     queryFn: () => suitesApi.listSuites(planQuery.data!.plan.projectId),
     enabled: !!planQuery.data,
   });
+  const configGroupsQuery = useQuery({
+    queryKey: ['projects', planQuery.data?.plan.projectId, 'config-groups'],
+    queryFn: () => configApi.listConfigGroups(planQuery.data!.plan.projectId),
+    enabled: !!planQuery.data,
+  });
+  const configGroups = configGroupsQuery.data?.configGroups ?? [];
+
+  function toggleConfig(id: string) {
+    setConfigIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
+  }
 
   const addRun = useMutation({
-    mutationFn: () => plansApi.createPlanRun(planId!, { name, suiteId }),
+    mutationFn: () =>
+      configIds.length > 0
+        ? configApi.createPlanRunsByConfig(planId!, { name, suiteId, configIds }).then((res) => res.runs)
+        : plansApi.createPlanRun(planId!, { name, suiteId }).then((res) => [res.run]),
     onSuccess: () => {
       setName('');
       setSuiteId('');
+      setConfigIds([]);
       setShowForm(false);
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['plans', planId] });
@@ -235,12 +254,43 @@ export function PlanDetailPage() {
               ))}
             </Select>
           </Field>
+          <Field>
+            <div className="mb-1.5 flex items-center justify-between">
+              <Label>Configurations (optional — creates one run per selected value)</Label>
+              <button type="button" className="text-xs text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setShowConfigManager(true)}>
+                Manage configurations
+              </button>
+            </div>
+            {configGroups.length === 0 ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500">No configuration groups set up yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {configGroups.map((group) => (
+                  <div key={group.id}>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{group.name}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.configs.map((c) => (
+                        <label key={c.id} className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                          <input type="checkbox" checked={configIds.includes(c.id)} onChange={() => toggleConfig(c.id)} />
+                          {c.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Field>
           {error && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" disabled={addRun.isPending}>
-            {addRun.isPending ? 'Creating…' : 'Create run'}
+            {addRun.isPending ? 'Creating…' : configIds.length > 1 ? `Create ${configIds.length} runs` : 'Create run'}
           </Button>
         </form>
       )}
+
+      <Modal open={showConfigManager} onClose={() => setShowConfigManager(false)} title="Configurations">
+        <ConfigurationsManager projectId={plan.projectId} configGroups={configGroups} />
+      </Modal>
 
       <div className="space-y-2">
         {plan.runs.map((run) => (

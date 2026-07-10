@@ -86,6 +86,36 @@ model Project {
   webhooks       Webhook[]
   labels         Label[]
   sharedStepSets SharedStepSet[]
+  configGroups   ConfigGroup[]
+}
+
+// Named groups of configuration values (e.g. "Browsers": Chrome/Firefox/Safari) used to spin up
+// one run per selected value when adding a run to a plan — see runs/service.ts's
+// createRunsForConfigs. Deliberately simpler than real TestRail's full cross-group combination
+// matrix: selecting configs across multiple groups here still yields one run per config, not a
+// cartesian product across groups.
+model ConfigGroup {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+
+  configs Config[]
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model Config {
+  id            String      @id @default(cuid())
+  configGroupId String
+  configGroup   ConfigGroup @relation(fields: [configGroupId], references: [id], onDelete: Cascade)
+  name          String
+  createdAt     DateTime    @default(now())
+
+  @@unique([configGroupId, name])
+  @@index([configGroupId])
 }
 
 // Project-scoped tags for TestCase/RunCase — a lighter-weight alternative to full custom
