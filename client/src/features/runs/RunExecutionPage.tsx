@@ -549,6 +549,15 @@ export function RunExecutionPage() {
     },
   });
 
+  const bulkResult = useMutation({
+    mutationFn: (vars: { testIds: string[]; status: ResultStatus }) => runsApi.bulkSubmitResults(runId!, vars.testIds, vars.status),
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['runs', runId, 'tests'] });
+      queryClient.invalidateQueries({ queryKey: ['runs', runId, 'summary'] });
+    },
+  });
+
   if (!runQuery.data) return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
   const run = runQuery.data.run;
   const knownDefectIds = defectsQuery.data?.defects.map((d) => d.id) ?? [];
@@ -771,6 +780,17 @@ export function RunExecutionPage() {
               >
                 Assign selected
               </Button>
+              <span className="text-xs text-slate-400 dark:text-slate-500">Set status:</span>
+              {(['PASSED', 'FAILED', 'BLOCKED', 'RETEST'] as ResultStatus[]).map((status) => (
+                <button
+                  key={status}
+                  disabled={bulkResult.isPending}
+                  onClick={() => bulkResult.mutate({ testIds: [...selectedIds], status })}
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold ${STATUS_BUTTON_CLASSES[status]}`}
+                >
+                  {status}
+                </button>
+              ))}
               <button className="text-xs text-slate-500 dark:text-slate-400 hover:underline" onClick={() => setSelectedIds(new Set())}>
                 Clear
               </button>

@@ -23,3 +23,12 @@ export const bulkAssignSchema = z.object({
   testIds: z.array(z.string()).min(1).max(500),
   assignedToId: z.string().nullable(),
 });
+
+// One status for every selected test at once — no stepResults (that's only meaningful entering
+// results one test at a time) and no defects (a defect ID rarely applies identically across
+// many different tests).
+export const bulkResultSchema = z.object({
+  testIds: z.array(z.string()).min(1).max(500),
+  status: z.enum(['PASSED', 'FAILED', 'BLOCKED', 'RETEST', 'UNTESTED']),
+  comment: z.string().max(4000).optional(),
+});

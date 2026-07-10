@@ -9,7 +9,7 @@ import { createRun, createRunsForConfigs, getRunSummary, rerunRun } from './serv
 import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
-import { bulkAssignSchema } from '../results/schema';
+import { bulkAssignSchema, bulkResultSchema } from '../results/schema';
 import { logAudit } from '../../lib/audit';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
@@ -206,6 +206,39 @@ runsRouter.post(
       data: { assignedToId: body.assignedToId },
     });
     res.json({ updated: result.count });
+  }),
+);
+
+runsRouter.post(
+  '/:id/tests/bulk-result',
+  requireRole(...WRITE_ROLES),
+  asyncHandler(async (req, res) => {
+    const body = bulkResultSchema.parse(req.body);
+    // Scope to this run first so a testId from a different run can't be targeted, then create
+    // one Result per matched test (createMany — one batched insert, not a loop) and flip every
+    // matched RunCase's denormalized status in a single updateMany, matching the same
+    // create-one-set-status-in-one-transaction shape the single-test submit endpoint uses.
+    const matched = await prisma.runCase.findMany({
+      where: { id: { in: body.testIds }, runId: req.params.id },
+      select: { id: true },
+    });
+    const matchedIds = matched.map((m) => m.id);
+    if (matchedIds.length === 0) {
+      res.json({ updated: 0 });
+      return;
+    }
+    await prisma.$transaction([
+      prisma.result.createMany({
+        data: matchedIds.map((runCaseId) => ({
+          runCaseId,
+          status: body.status,
+          comment: body.comment,
+          enteredById: req.user!.id,
+        })),
+      }),
+      prisma.runCase.updateMany({ where: { id: { in: matchedIds } }, data: { status: body.status } }),
+    ]);
+    res.json({ updated: matchedIds.length });
   }),
 );
 

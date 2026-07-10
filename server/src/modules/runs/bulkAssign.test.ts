@@ -87,3 +87,40 @@ describe('bulk assign', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('bulk result entry', () => {
+  it('submits one status to multiple selected tests, creating a Result row for each and updating their denormalized status', async () => {
+    const { run, tests } = await seedRunWithThreeCases();
+    const ids = tests.map((t: { id: string }) => t.id).slice(0, 2);
+
+    const res = await request(app)
+      .post(`/api/v1/runs/${run.id}/tests/bulk-result`)
+      .set(auth())
+      .send({ testIds: ids, status: 'PASSED', comment: 'Bulk-passed' });
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(2);
+
+    const refreshed = await request(app).get(`/api/v1/runs/${run.id}/tests`).set(auth());
+    const passed = refreshed.body.tests.filter((t: { status: string }) => t.status === 'PASSED');
+    expect(passed).toHaveLength(2);
+    const untouched = refreshed.body.tests.find((t: { id: string }) => t.id === tests[2].id);
+    expect(untouched.status).toBe('UNTESTED');
+
+    const history = await request(app).get(`/api/v1/tests/${ids[0]}/results`).set(auth());
+    expect(history.body.results[0]).toMatchObject({ status: 'PASSED', comment: 'Bulk-passed' });
+  });
+
+  it('ignores test ids that belong to a different run', async () => {
+    const { run: runA, tests: testsA } = await seedRunWithThreeCases();
+    const { run: runB } = await seedRunWithThreeCases();
+
+    const res = await request(app)
+      .post(`/api/v1/runs/${runB.id}/tests/bulk-result`)
+      .set(auth())
+      .send({ testIds: [testsA[0].id], status: 'FAILED' });
+    expect(res.body.updated).toBe(0);
+
+    const refreshed = await request(app).get(`/api/v1/runs/${runA.id}/tests`).set(auth());
+    expect(refreshed.body.tests.find((t: { id: string }) => t.id === testsA[0].id).status).toBe('UNTESTED');
+  });
+});

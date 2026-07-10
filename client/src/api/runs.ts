@@ -132,3 +132,10 @@ export function bulkAssignTests(runId: string, testIds: string[], assignedToId: 
     body: { testIds, assignedToId },
   });
 }
+
+export function bulkSubmitResults(runId: string, testIds: string[], status: ResultStatus, comment?: string) {
+  return apiFetch<{ updated: number }>(`/runs/${runId}/tests/bulk-result`, {
+    method: 'POST',
+    body: { testIds, status, comment },
+  });
+}
