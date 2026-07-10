@@ -13,7 +13,7 @@ import {
   updateCaseSchema,
 } from './schema';
 import { CASE_LABELS_INCLUDE, CASE_SHARED_STEPS_INCLUDE, serializeSteps, toPublicCase } from './serialize';
-import { buildSectionNameMap, casesToCsv, parseCasesCsv } from './csv';
+import { buildSectionPathMap, casesToCsv, parseCasesCsv, resolveExportColumns } from './csv';
 import { casesToFeatureFile, parseFeatureFile } from './gherkin';
 import { buildCaseListQuery, buildCaseSort, setCaseLabels } from './service';
 import { setCaseSharedSteps } from '../sharedSteps/service';
@@ -40,11 +40,29 @@ casesBySuiteRouter.get(
 casesBySuiteRouter.get(
   '/export',
   asyncHandler(async (req, res) => {
+    const sectionIdsParam = req.query.sectionIds;
+    const sectionIds =
+      typeof sectionIdsParam === 'string' && sectionIdsParam.length > 0 ? sectionIdsParam.split(',').filter(Boolean) : [];
+    const columnsParam = req.query.columns;
+    const columns = resolveExportColumns(
+      typeof columnsParam === 'string' && columnsParam.length > 0 ? columnsParam.split(',').filter(Boolean) : [],
+    );
+
     const [cases, sections] = await Promise.all([
-      prisma.testCase.findMany({ where: { suiteId: req.params.suiteId, isDeleted: false }, orderBy: { orderIndex: 'asc' } }),
+      prisma.testCase.findMany({
+        where: {
+          suiteId: req.params.suiteId,
+          isDeleted: false,
+          ...(sectionIds.length > 0 ? { sectionId: { in: sectionIds } } : {}),
+        },
+        orderBy: { orderIndex: 'asc' },
+      }),
+      // Full suite (not just the selected sections) — needed so ancestor names still resolve
+      // for the "Sections Hierarchy" column even when a selected case's parent section itself
+      // wasn't checked in the picker.
       prisma.section.findMany({ where: { suiteId: req.params.suiteId } }),
     ]);
-    const csv = casesToCsv(cases, buildSectionNameMap(sections));
+    const csv = casesToCsv(cases, buildSectionPathMap(sections), columns);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="cases-${req.params.suiteId}.csv"`);
     res.send(csv);
@@ -72,17 +90,35 @@ casesBySuiteRouter.post(
 
     const suite = await prisma.suite.findUnique({ where: { id: req.params.suiteId } });
     if (!suite) throw new NotFoundError('Suite');
+    const suiteId = suite.id;
 
-    const existingSections = await prisma.section.findMany({ where: { suiteId: suite.id } });
-    const sectionByName = new Map(existingSections.map((s) => [s.name.toLowerCase(), s]));
+    const existingSections = await prisma.section.findMany({ where: { suiteId } });
+    const sectionByKey = new Map(
+      existingSections.map((s) => [`${s.parentId ?? 'root'}::${s.name.toLowerCase()}`, s]),
+    );
+
+    // Walks a Sections Hierarchy path (`Parent > Child > Grandchild`) level by level, creating
+    // any section that doesn't already exist under its resolved parent — matching-by-name is
+    // scoped per parent (via the key's parentId prefix) so two different parents can each have
+    // a child section with the same name without colliding.
+    async function resolveSectionPath(path: string[]) {
+      let parentId: string | null = null;
+      let section = null;
+      for (const name of path) {
+        const key = `${parentId ?? 'root'}::${name.toLowerCase()}`;
+        section = sectionByKey.get(key);
+        if (!section) {
+          section = await prisma.section.create({ data: { suiteId, name, parentId } });
+          sectionByKey.set(key, section);
+        }
+        parentId = section.id;
+      }
+      return section!;
+    }
 
     let created = 0;
     for (const row of rows) {
-      let section = sectionByName.get(row.sectionName.toLowerCase());
-      if (!section) {
-        section = await prisma.section.create({ data: { suiteId: suite.id, name: row.sectionName } });
-        sectionByName.set(row.sectionName.toLowerCase(), section);
-      }
+      const section = await resolveSectionPath(row.sectionPath);
       await prisma.testCase.create({
         data: {
           suiteId: suite.id,

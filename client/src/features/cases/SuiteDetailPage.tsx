@@ -25,6 +25,7 @@ import { SectionTree } from './SectionTree';
 import { SharedStepsManager } from './SharedStepsManager';
 import { CaseHistoryModal } from './CaseHistoryModal';
 import { CaseAttachments } from './CaseAttachments';
+import { CsvExportDialog } from './CsvExportDialog';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, downloadFeatureFile, importCasesCsv, importFeatureFile } from '../../api/csv';
 
@@ -84,6 +85,7 @@ export function SuiteDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [csvMessage, setCsvMessage] = useState<string | null>(null);
   const [showSharedStepsManager, setShowSharedStepsManager] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [historyCase, setHistoryCase] = useState<TestCase | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const featureFileInputRef = useRef<HTMLInputElement>(null);
@@ -436,7 +438,7 @@ export function SuiteDetailPage() {
           </button>
           <button
             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-            onClick={() => downloadCasesCsv(suite.id, suite.name)}
+            onClick={() => setShowExportDialog(true)}
           >
             Export CSV
           </button>
@@ -906,6 +908,13 @@ export function SuiteDetailPage() {
       </Modal>
 
       {historyCase && <CaseHistoryModal caseId={historyCase.id} caseTitle={historyCase.title} onClose={() => setHistoryCase(null)} />}
+
+      <CsvExportDialog
+        open={showExportDialog}
+        onClose={() => setShowExportDialog(false)}
+        sections={sections}
+        onExport={({ sectionIds, columns }) => downloadCasesCsv(suite.id, suite.name, { sectionIds, columns })}
+      />
     </div>
   );
 }

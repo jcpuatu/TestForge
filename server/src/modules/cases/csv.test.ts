@@ -67,4 +67,60 @@ describe('CSV import/export', () => {
       .send({ csv: 'section,priority\nLogin,HIGH' });
     expect(res.status).toBe(400);
   });
+
+  it('auto-creates nested subsections from a Sections Hierarchy path, and export round-trips the same path', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: 'CSV Hierarchy Project' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth())
+      .send({ name: 'Suite' });
+    const suiteId = suite.body.suite.id;
+
+    const csv = [
+      'Sections Hierarchy,title,priority,type',
+      'Auth > Login,Valid login succeeds,HIGH,SMOKE',
+      'Auth > Login,Invalid password rejected,MEDIUM,FUNCTIONAL',
+      'Auth > Logout,Logout clears session,MEDIUM,FUNCTIONAL',
+    ].join('\n');
+
+    const importRes = await request(app).post(`/api/v1/suites/${suiteId}/cases/import`).set(auth()).send({ csv });
+    expect(importRes.status).toBe(201);
+    expect(importRes.body.imported).toBe(3);
+
+    const sections = await request(app).get(`/api/v1/suites/${suiteId}/sections`).set(auth());
+    expect(sections.body.sections).toHaveLength(3);
+    const auth_ = sections.body.sections.find((s: { name: string }) => s.name === 'Auth');
+    const login = sections.body.sections.find((s: { name: string }) => s.name === 'Login');
+    const logout = sections.body.sections.find((s: { name: string }) => s.name === 'Logout');
+    expect(auth_.parentId).toBeNull();
+    expect(login.parentId).toBe(auth_.id);
+    expect(logout.parentId).toBe(auth_.id);
+
+    const exportRes = await request(app).get(`/api/v1/suites/${suiteId}/cases/export`).set(auth());
+    expect(exportRes.text).toContain('Sections Hierarchy');
+    expect(exportRes.text).toContain('Auth > Login');
+    expect(exportRes.text).toContain('Auth > Logout');
+  });
+
+  it('export honors a sectionIds filter and a columns picker', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: 'CSV Picker Project' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth())
+      .send({ name: 'Suite' });
+    const suiteId = suite.body.suite.id;
+
+    const csv = ['section,title,priority,type', 'A,Case A,HIGH,SMOKE', 'B,Case B,LOW,REGRESSION'].join('\n');
+    await request(app).post(`/api/v1/suites/${suiteId}/cases/import`).set(auth()).send({ csv });
+
+    const sections = await request(app).get(`/api/v1/suites/${suiteId}/sections`).set(auth());
+    const sectionA = sections.body.sections.find((s: { name: string }) => s.name === 'A');
+
+    const filtered = await request(app)
+      .get(`/api/v1/suites/${suiteId}/cases/export?sectionIds=${sectionA.id}&columns=title,priority`)
+      .set(auth());
+    expect(filtered.text).toContain('Case A');
+    expect(filtered.text).not.toContain('Case B');
+    expect(filtered.text.split('\r\n')[0]).toBe('title,priority');
+  });
 });

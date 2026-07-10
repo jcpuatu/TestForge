@@ -7,8 +7,16 @@ export function importCasesCsv(suiteId: string, csv: string) {
   return apiFetch<{ imported: number }>(`/suites/${suiteId}/cases/import`, { method: 'POST', body: { csv } });
 }
 
-export async function downloadCasesCsv(suiteId: string, suiteName: string) {
-  const res = await fetch(`${BASE_URL}/suites/${suiteId}/cases/export`, {
+export async function downloadCasesCsv(
+  suiteId: string,
+  suiteName: string,
+  options?: { sectionIds?: string[]; columns?: string[] },
+) {
+  const params = new URLSearchParams();
+  if (options?.sectionIds?.length) params.set('sectionIds', options.sectionIds.join(','));
+  if (options?.columns?.length) params.set('columns', options.columns.join(','));
+  const qs = params.toString();
+  const res = await fetch(`${BASE_URL}/suites/${suiteId}/cases/export${qs ? `?${qs}` : ''}`, {
     credentials: 'include',
     headers: getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {},
   });
