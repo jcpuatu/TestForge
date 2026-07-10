@@ -27,7 +27,11 @@ runsNestedRouter.get(
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { runCases: true } }, suite: { select: { name: true } } },
     });
-    res.json({ runs });
+    // Per-run status breakdown so the Runs list can show a pass/fail bar without a click-through
+    // per run (previously this list showed less status info than the Overview dashboard's own
+    // "Recent runs" widget, which already computes this the same way for its top-10 slice).
+    const summaries = await Promise.all(runs.map((run) => getRunSummary(run.id)));
+    res.json({ runs: runs.map((run, i) => ({ ...run, ...summaries[i] })) });
   }),
 );
 

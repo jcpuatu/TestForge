@@ -29,6 +29,18 @@ const STATUS_BUTTON_CLASSES: Record<ResultStatus, string> = {
   RETEST: 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-100 dark:hover:bg-cyan-800/60 border border-cyan-200 dark:border-cyan-800',
 };
 
+// A left-edge color bar per test row, matching the same status palette used everywhere else
+// (StackedStatusBar/StatusBadge) — lets a QA scan a long list and spot failing/blocked rows by
+// color alone, the same "scan for red" pattern real issue trackers and TestRail itself use,
+// without having to read every status badge individually.
+const STATUS_ACCENT_CLASSES: Record<ResultStatus, string> = {
+  UNTESTED: 'border-l-slate-300 dark:border-l-slate-600',
+  PASSED: 'border-l-emerald-500',
+  FAILED: 'border-l-red-500',
+  BLOCKED: 'border-l-orange-500',
+  RETEST: 'border-l-cyan-500',
+};
+
 interface AppliedFilter {
   userIds: Set<string>;
   showUnassigned: boolean;
@@ -282,7 +294,16 @@ function TestRow({
   const hasOpenDefect = (test.status === 'FAILED' || test.status === 'BLOCKED') && !!test.latestDefects;
 
   return (
-    <div id={`test-row-${test.id}`} className="border-b border-slate-200 dark:border-slate-700 p-3 last:border-b-0">
+    // border-b-* / border-l-* (directional color utilities) rather than the border-* shorthand
+    // for the bottom divider — a shorthand border-color and a border-l-{status} color utility
+    // both ultimately set border-left-color once Tailwind expands them, and which one wins
+    // depends on generated-CSS order, not class-string order (the same hazard already
+    // documented in client/CLAUDE.md for Badge/Select). Directional-only utilities can't collide
+    // since they never target the same longhand property.
+    <div
+      id={`test-row-${test.id}`}
+      className={`border-b border-l-4 border-b-slate-200 p-3 last:border-b-0 dark:border-b-slate-700 ${STATUS_ACCENT_CLASSES[test.status]}`}
+    >
       <div className="flex items-center justify-between gap-3">
         {canAssign && (
           <input
@@ -476,11 +497,17 @@ function TestRow({
                   </Select>
                 </Field>
               )}
-              <div className="flex flex-wrap items-center gap-2">
+              {/* A divider + extra top padding turns this into a visually distinct "commit"
+                  footer within the record box, and the buttons are a size step up from the
+                  fields above them (py-2/text-sm vs. py-1.5/text-xs) — these are clicked
+                  hundreds of times a day and deserve more visual weight than the surrounding
+                  metadata fields, without reordering them ahead of Comment/Defects (recording
+                  why a test failed before committing the status is the more correct order). */}
+              <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 dark:border-slate-600">
                 <button
                   disabled={submitResult.isPending}
                   onClick={() => submitStatus('PASSED', true)}
-                  className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
                 >
                   Pass &amp; Next
                 </button>
@@ -489,7 +516,7 @@ function TestRow({
                     key={status}
                     disabled={submitResult.isPending}
                     onClick={() => submitStatus(status)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-semibold ${STATUS_BUTTON_CLASSES[status]}`}
+                    className={`rounded-md px-4 py-2 text-sm font-semibold ${STATUS_BUTTON_CLASSES[status]}`}
                   >
                     {status}
                   </button>
@@ -529,15 +556,27 @@ function TestRow({
                       <p>
                         {r.comment} {r.defects && <DefectText value={r.defects} />}
                       </p>
-                      {r.stepResults && r.stepResults.length > 0 && (
-                        <ol className="ml-4 mt-0.5 list-decimal space-y-0.5">
-                          {r.stepResults.map((sr, i) => (
-                            <li key={i} className="flex items-center gap-1.5">
-                              <StatusBadge status={sr.status} />
-                              {sr.actual && <span>{sr.actual}</span>}
-                            </li>
-                          ))}
-                        </ol>
+                      {/* A per-step status badge sitting right next to the overall result badge
+                          above (e.g. "PASSED" then "UNTESTED") reads ambiguous without a label —
+                          it's easy to misread as a second, conflicting overall status rather than
+                          one specific step. Also skip rendering entirely when every step is still
+                          at its default UNTESTED with no actual-result text (e.g. after a quick
+                          Pass & Next that never touched per-step detail) — a wall of "UNTESTED"
+                          badges is noise, not information. */}
+                      {r.stepResults && r.stepResults.some((sr) => sr.status !== 'UNTESTED' || sr.actual) && (
+                        <div className="mt-1">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                            Per-step
+                          </p>
+                          <ol className="ml-4 mt-0.5 list-decimal space-y-0.5">
+                            {r.stepResults.map((sr, i) => (
+                              <li key={i} className="flex items-center gap-1.5">
+                                <StatusBadge status={sr.status} />
+                                {sr.actual && <span>{sr.actual}</span>}
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
                       )}
                       <p className="text-slate-400 dark:text-slate-500">
                         {r.enteredBy?.name} · {new Date(r.createdAt).toLocaleString()}

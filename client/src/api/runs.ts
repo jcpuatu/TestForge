@@ -17,6 +17,11 @@ export interface TestRun {
   plan?: { id: string; name: string; startDate: string | null; endDate: string | null } | null;
   milestone?: { id: string; name: string; startDate: string | null; dueDate: string | null } | null;
   _count?: { runCases: number };
+  // Present on the list endpoint only (GET /projects/:id/runs) — a per-run status breakdown so
+  // the Runs list can show a pass/fail bar without a click-through, matching what the Overview
+  // dashboard's "Recent runs" widget already shows.
+  counts?: Record<ResultStatus, number>;
+  total?: number;
 }
 
 export type ResultStatus = 'UNTESTED' | 'PASSED' | 'FAILED' | 'BLOCKED' | 'RETEST';
