@@ -10,6 +10,7 @@ import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
 import { bulkAssignSchema } from '../results/schema';
+import { logAudit } from '../../lib/audit';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
@@ -109,6 +110,16 @@ runsRouter.patch(
       await prisma.runCase.updateMany({ where: { runId: req.params.id }, data: { assignedToId } });
     }
     const run = await prisma.testRun.update({ where: { id: req.params.id }, data });
+    if (body.startDate !== undefined || body.endDate !== undefined) {
+      await logAudit({
+        projectId: run.projectId,
+        actorId: req.user!.id,
+        action: 'RUN_DATES_CHANGED',
+        entityType: 'TestRun',
+        entityId: run.id,
+        summary: `Changed dates on run "${run.name}"`,
+      });
+    }
     res.json({ run });
   }),
 );
@@ -126,6 +137,14 @@ runsRouter.post(
       runId: run.id,
       runName: run.name,
       ...summary,
+    });
+    await logAudit({
+      projectId: run.projectId,
+      actorId: req.user!.id,
+      action: 'RUN_CLOSED',
+      entityType: 'TestRun',
+      entityId: run.id,
+      summary: `Closed run "${run.name}" (${summary.total} test(s): ${summary.counts.PASSED} passed, ${summary.counts.FAILED} failed)`,
     });
     res.json({ run });
   }),

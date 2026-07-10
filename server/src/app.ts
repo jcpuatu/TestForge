@@ -20,6 +20,7 @@ import { webhooksRouter, webhooksNestedRouter } from './modules/webhooks/routes'
 import { labelsRouter, labelsNestedRouter } from './modules/labels/routes';
 import { sharedStepSetsRouter, sharedStepSetsNestedRouter, promoteSharedStepsRouter } from './modules/sharedSteps/routes';
 import { configGroupsRouter, configGroupsNestedRouter, configsRouter } from './modules/configurations/routes';
+import { auditLogNestedRouter } from './modules/audit/routes';
 import { meRouter } from './modules/me/routes';
 
 export const app = express();
@@ -49,6 +50,7 @@ app.use('/api/v1/projects/:projectId/webhooks', webhooksNestedRouter);
 app.use('/api/v1/projects/:projectId/labels', labelsNestedRouter);
 app.use('/api/v1/projects/:projectId/shared-step-sets', sharedStepSetsNestedRouter);
 app.use('/api/v1/projects/:projectId/config-groups', configGroupsNestedRouter);
+app.use('/api/v1/projects/:projectId/audit-log', auditLogNestedRouter);
 app.use('/api/v1/projects', projectsRouter);
 app.use('/api/v1/suites/:suiteId/sections', sectionsNestedRouter);
 app.use('/api/v1/suites/:suiteId/cases', casesBySuiteRouter);

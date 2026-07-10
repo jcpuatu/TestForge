@@ -7,6 +7,7 @@ import { NotFoundError } from '../../lib/errors';
 import { BadRequestError } from '../../lib/errors';
 import { createSectionSchema, moveSectionSchema, updateSectionSchema } from './schema';
 import { collectSectionSubtree, moveSection } from './service';
+import { logAudit } from '../../lib/audit';
 
 // Mounted at /api/v1/suites/:suiteId/sections
 export const sectionsNestedRouter = Router({ mergeParams: true });
@@ -82,7 +83,7 @@ sectionsRouter.delete(
   '/:id',
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
-    const section = await prisma.section.findUnique({ where: { id: req.params.id } });
+    const section = await prisma.section.findUnique({ where: { id: req.params.id }, include: { suite: true } });
     if (!section) throw new NotFoundError('Section');
 
     // Matches real TestRail exactly: deleting a section permanently (hard) deletes every
@@ -91,11 +92,21 @@ sectionsRouter.delete(
     // onDelete: Restrict never blocks a parent delete on a still-present child.
     const subtreeIds = await collectSectionSubtree(section.id);
     const deletionOrder = [...subtreeIds].reverse();
+    const caseCount = await prisma.testCase.count({ where: { sectionId: { in: subtreeIds }, isDeleted: false } });
 
     await prisma.testCase.deleteMany({ where: { sectionId: { in: subtreeIds } } });
     for (const id of deletionOrder) {
       await prisma.section.delete({ where: { id } });
     }
+
+    await logAudit({
+      projectId: section.suite.projectId,
+      actorId: req.user!.id,
+      action: 'SECTION_DELETED',
+      entityType: 'Section',
+      entityId: section.id,
+      summary: `Deleted section "${section.name}" (${subtreeIds.length - 1} subsection(s), ${caseCount} case(s))`,
+    });
 
     res.status(204).send();
   }),

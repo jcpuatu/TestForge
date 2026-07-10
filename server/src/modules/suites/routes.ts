@@ -5,6 +5,7 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
 import { createSuiteSchema, updateSuiteSchema } from './schema';
+import { logAudit } from '../../lib/audit';
 
 // Mounted at /api/v1/projects/:projectId/suites
 export const suitesNestedRouter = Router({ mergeParams: true });
@@ -82,6 +83,8 @@ suitesRouter.delete(
   '/:id',
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
+    const suite = await prisma.suite.findUnique({ where: { id: req.params.id } });
+    if (!suite) throw new NotFoundError('Suite');
     // Matches real TestRail: deleting a suite permanently removes its cases (via onDelete:
     // Cascade on Section/TestCase below) AND its active runs+results, but preserves closed
     // runs (suiteId is nulled via TestRun's onDelete: SetNull instead of being deleted).
@@ -92,6 +95,14 @@ suitesRouter.delete(
     // out the parent links first so the cascade below has nothing left to restrict on.
     await prisma.section.updateMany({ where: { suiteId: req.params.id }, data: { parentId: null } });
     await prisma.suite.delete({ where: { id: req.params.id } });
+    await logAudit({
+      projectId: suite.projectId,
+      actorId: req.user!.id,
+      action: 'SUITE_DELETED',
+      entityType: 'Suite',
+      entityId: suite.id,
+      summary: `Deleted suite "${suite.name}"`,
+    });
     res.status(204).send();
   }),
 );

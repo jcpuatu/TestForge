@@ -5,6 +5,7 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createLabelSchema, updateLabelSchema } from './schema';
+import { logAudit } from '../../lib/audit';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 
@@ -52,6 +53,14 @@ labelsRouter.patch(
     // Renaming is all a rename needs to do — every TestCaseLabel join row still points at
     // this same Label id, so the new name is picked up everywhere automatically.
     const label = await prisma.label.update({ where: { id: req.params.id }, data: { name: body.name } });
+    await logAudit({
+      projectId: existing.projectId,
+      actorId: req.user!.id,
+      action: 'LABEL_RENAMED',
+      entityType: 'Label',
+      entityId: label.id,
+      summary: `Renamed label "${existing.name}" to "${label.name}"`,
+    });
     res.json({ label });
   }),
 );
@@ -60,9 +69,19 @@ labelsRouter.delete(
   '/:id',
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
+    const existing = await prisma.label.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new NotFoundError('Label');
     // Cascades to TestCaseLabel automatically (onDelete: Cascade), removing the label from
     // every case that had it — matches TestRail's documented delete-label behavior.
     await prisma.label.delete({ where: { id: req.params.id } });
+    await logAudit({
+      projectId: existing.projectId,
+      actorId: req.user!.id,
+      action: 'LABEL_DELETED',
+      entityType: 'Label',
+      entityId: existing.id,
+      summary: `Deleted label "${existing.name}"`,
+    });
     res.status(204).send();
   }),
 );

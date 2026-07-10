@@ -6,6 +6,7 @@ import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createPlanSchema, rerunPlanSchema, updatePlanSchema } from './schema';
 import { rerunPlan } from './service';
+import { logAudit } from '../../lib/audit';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 
@@ -78,6 +79,16 @@ plansRouter.patch(
     if (body.isCompleted === true) data.completedAt = new Date();
     if (body.isCompleted === false) data.completedAt = null;
     const plan = await prisma.testPlan.update({ where: { id: req.params.id }, data });
+    if (body.startDate !== undefined || body.endDate !== undefined) {
+      await logAudit({
+        projectId: plan.projectId,
+        actorId: req.user!.id,
+        action: 'PLAN_DATES_CHANGED',
+        entityType: 'TestPlan',
+        entityId: plan.id,
+        summary: `Changed dates on plan "${plan.name}"`,
+      });
+    }
     res.json({ plan });
   }),
 );

@@ -5,6 +5,7 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createMilestoneSchema, updateMilestoneSchema } from './schema';
+import { logAudit } from '../../lib/audit';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 
@@ -69,6 +70,16 @@ milestonesRouter.patch(
     if (body.isCompleted === true) data.completedAt = new Date();
     if (body.isCompleted === false) data.completedAt = null;
     const milestone = await prisma.milestone.update({ where: { id: req.params.id }, data });
+    if (body.startDate !== undefined || body.dueDate !== undefined) {
+      await logAudit({
+        projectId: milestone.projectId,
+        actorId: req.user!.id,
+        action: 'MILESTONE_DATES_CHANGED',
+        entityType: 'Milestone',
+        entityId: milestone.id,
+        summary: `Changed dates on milestone "${milestone.name}"`,
+      });
+    }
     res.json({ milestone });
   }),
 );

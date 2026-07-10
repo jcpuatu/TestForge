@@ -22,6 +22,7 @@ import { UsersAdminPage } from './features/admin/UsersAdminPage';
 import { ApiKeysPage } from './features/admin/ApiKeysPage';
 import { MyTestsPage } from './features/me/MyTestsPage';
 import { DefectsTab } from './features/defects/DefectsTab';
+import { ActivityTab } from './features/activity/ActivityTab';
 
 function App() {
   return (
@@ -59,6 +60,7 @@ function App() {
               <Route path="plans" element={<PlansListTab />} />
               <Route path="milestones" element={<MilestonesTab />} />
               <Route path="defects" element={<DefectsTab />} />
+              <Route path="activity" element={<ActivityTab />} />
               <Route path="webhooks" element={<WebhooksTab />} />
             </Route>
             <Route

@@ -18,6 +18,7 @@ import { casesToFeatureFile, parseFeatureFile } from './gherkin';
 import { buildCaseListQuery, buildCaseSort, setCaseLabels } from './service';
 import { setCaseSharedSteps } from '../sharedSteps/service';
 import { BadRequestError } from '../../lib/errors';
+import { logAudit } from '../../lib/audit';
 
 const CASE_INCLUDE = { ...CASE_LABELS_INCLUDE, ...CASE_SHARED_STEPS_INCLUDE };
 
@@ -253,7 +254,19 @@ casesRouter.delete(
   '/:id',
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
-    await prisma.testCase.update({ where: { id: req.params.id }, data: { isDeleted: true } });
+    const testCase = await prisma.testCase.update({
+      where: { id: req.params.id },
+      data: { isDeleted: true },
+      include: { suite: true },
+    });
+    await logAudit({
+      projectId: testCase.suite.projectId,
+      actorId: req.user!.id,
+      action: 'CASE_DELETED',
+      entityType: 'TestCase',
+      entityId: testCase.id,
+      summary: `Deleted case "${testCase.title}"`,
+    });
     res.status(204).send();
   }),
 );
