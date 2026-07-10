@@ -234,6 +234,62 @@ casesRouter.get(
   }),
 );
 
+// "History & Context": every run this case has appeared in, its latest result there, and the
+// same defect-rollup aggregation the project-wide Defects tab uses, scoped to just this case.
+casesRouter.get(
+  '/:id/history',
+  asyncHandler(async (req, res) => {
+    const testCase = await prisma.testCase.findUnique({ where: { id: req.params.id } });
+    if (!testCase) throw new NotFoundError('Test case');
+
+    const runCases = await prisma.runCase.findMany({
+      where: { caseId: req.params.id },
+      include: {
+        run: { select: { id: true, name: true, isCompleted: true } },
+        results: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const timeline = runCases.map((rc) => ({
+      runId: rc.run.id,
+      runName: rc.run.name,
+      isCompleted: rc.run.isCompleted,
+      status: rc.status,
+      defects: rc.results[0]?.defects ?? null,
+      resultDate: rc.results[0]?.createdAt ?? null,
+    }));
+
+    interface DefectEntry {
+      id: string;
+      count: number;
+      openCount: number;
+      lastSeenAt: string;
+      runs: { runId: string; runName: string }[];
+    }
+    const byDefect = new Map<string, DefectEntry>();
+    for (const rc of runCases) {
+      const latest = rc.results[0];
+      if (!latest?.defects) continue;
+      const ids = latest.defects.split(',').map((s) => s.trim()).filter(Boolean);
+      for (const id of ids) {
+        const entry = byDefect.get(id) ?? { id, count: 0, openCount: 0, lastSeenAt: latest.createdAt.toISOString(), runs: [] };
+        entry.count += 1;
+        if (rc.status === 'FAILED' || rc.status === 'BLOCKED') entry.openCount += 1;
+        if (latest.createdAt.toISOString() > entry.lastSeenAt) entry.lastSeenAt = latest.createdAt.toISOString();
+        entry.runs.push({ runId: rc.run.id, runName: rc.run.name });
+        byDefect.set(id, entry);
+      }
+    }
+
+    res.json({
+      case: { id: testCase.id, title: testCase.title },
+      timeline,
+      defects: [...byDefect.values()].sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1)),
+    });
+  }),
+);
+
 casesRouter.patch(
   '/:id',
   requireRole(...WRITE_ROLES),

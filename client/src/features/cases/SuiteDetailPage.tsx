@@ -23,6 +23,7 @@ import { CaseFilterBar } from './CaseFilterBar';
 import { BulkCaseActionsBar } from './BulkCaseActionsBar';
 import { SectionTree } from './SectionTree';
 import { SharedStepsManager } from './SharedStepsManager';
+import { CaseHistoryModal } from './CaseHistoryModal';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, downloadFeatureFile, importCasesCsv, importFeatureFile } from '../../api/csv';
 
@@ -82,6 +83,7 @@ export function SuiteDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [csvMessage, setCsvMessage] = useState<string | null>(null);
   const [showSharedStepsManager, setShowSharedStepsManager] = useState(false);
+  const [historyCase, setHistoryCase] = useState<TestCase | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const featureFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -685,28 +687,36 @@ export function SuiteDetailPage() {
                           </div>
                         )
                       ) : (
-                        canWriteCases && (
-                          <div className="flex shrink-0 gap-2">
-                            <button
-                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                              onClick={() => {
-                                setEditingCase(testCase);
-                                setShowCaseForm(false);
-                                setFormError(null);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            {canManageStructure && (
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            onClick={() => setHistoryCase(testCase)}
+                          >
+                            History
+                          </button>
+                          {canWriteCases && (
+                            <>
                               <button
-                                className="text-xs text-red-600 dark:text-red-400 hover:underline"
-                                onClick={() => deleteCaseMutation.mutate(testCase.id)}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                onClick={() => {
+                                  setEditingCase(testCase);
+                                  setShowCaseForm(false);
+                                  setFormError(null);
+                                }}
                               >
-                                Delete
+                                Edit
                               </button>
-                            )}
-                          </div>
-                        )
+                              {canManageStructure && (
+                                <button
+                                  className="text-xs text-red-600 dark:text-red-400 hover:underline"
+                                  onClick={() => deleteCaseMutation.mutate(testCase.id)}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -892,6 +902,8 @@ export function SuiteDetailPage() {
       <Modal open={showSharedStepsManager} onClose={() => setShowSharedStepsManager(false)} title="Shared step sets">
         <SharedStepsManager projectId={projectId ?? ''} sharedStepSets={sharedStepSets} />
       </Modal>
+
+      {historyCase && <CaseHistoryModal caseId={historyCase.id} caseTitle={historyCase.title} onClose={() => setHistoryCase(null)} />}
     </div>
   );
 }

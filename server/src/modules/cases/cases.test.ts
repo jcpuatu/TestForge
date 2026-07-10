@@ -226,6 +226,45 @@ describe('project → suite → section → case CRUD', () => {
     expect(stepsCase.body.case.steps).toEqual([{ step: 'Do X', expected: 'Y happens' }]);
   });
 
+  it('reports a case\'s run history and defect rollup across every run it has appeared in', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'History Test' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth(adminToken))
+      .send({ name: 'Suite' });
+    const section = await request(app)
+      .post(`/api/v1/suites/${suite.body.suite.id}/sections`)
+      .set(auth(adminToken))
+      .send({ name: 'Section' });
+    const testCase = await request(app)
+      .post(`/api/v1/sections/${section.body.section.id}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Flaky case' });
+    const caseId = testCase.body.case.id;
+
+    const runA = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Run A', suiteId: suite.body.suite.id });
+    const testsA = await request(app).get(`/api/v1/runs/${runA.body.run.id}/tests`).set(auth(adminToken));
+    await request(app).post(`/api/v1/tests/${testsA.body.tests[0].id}/results`).set(auth(adminToken)).send({ status: 'FAILED', defects: 'BUG-1' });
+
+    const runB = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Run B', suiteId: suite.body.suite.id });
+    const testsB = await request(app).get(`/api/v1/runs/${runB.body.run.id}/tests`).set(auth(adminToken));
+    await request(app).post(`/api/v1/tests/${testsB.body.tests[0].id}/results`).set(auth(adminToken)).send({ status: 'PASSED' });
+
+    const history = await request(app).get(`/api/v1/cases/${caseId}/history`).set(auth(adminToken));
+    expect(history.status).toBe(200);
+    expect(history.body.timeline).toHaveLength(2);
+    expect(history.body.timeline.map((t: { status: string }) => t.status)).toEqual(['FAILED', 'PASSED']);
+    expect(history.body.defects).toHaveLength(1);
+    expect(history.body.defects[0]).toMatchObject({ id: 'BUG-1', count: 1, openCount: 1 });
+    void caseId;
+  });
+
   it('creates a BDD-template case with Given/When/Then lines', async () => {
     const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: 'BDD Case Test' });
     const suite = await request(app)
