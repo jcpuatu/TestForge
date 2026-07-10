@@ -15,6 +15,7 @@ import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { StackedStatusBar, StatusLegend } from '../../components/StackedStatusBar';
 import { DraftDefectPanel } from './DraftDefectPanel';
 import { RerunDialog } from './RerunDialog';
+import { ResultAttachments } from './ResultAttachments';
 
 // PASSED isn't in this list — it's the dedicated "Pass & Next" button instead (matches real
 // TestRail: pass is always the fast, advancing path; the others are deliberate second choices).
@@ -542,6 +543,9 @@ function TestRow({
                         {r.version && <> · v{r.version}</>}
                         {r.elapsedMs != null && <> · {formatElapsed(r.elapsedMs)}</>}
                       </p>
+                      <div className="mt-1">
+                        <ResultAttachments resultId={r.id} canManage={canSubmit && !run.isCompleted} />
+                      </div>
                     </div>
                   </div>
                 ))}

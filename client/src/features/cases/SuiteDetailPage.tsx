@@ -24,6 +24,7 @@ import { BulkCaseActionsBar } from './BulkCaseActionsBar';
 import { SectionTree } from './SectionTree';
 import { SharedStepsManager } from './SharedStepsManager';
 import { CaseHistoryModal } from './CaseHistoryModal';
+import { CaseAttachments } from './CaseAttachments';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, downloadFeatureFile, importCasesCsv, importFeatureFile } from '../../api/csv';
 
@@ -820,6 +821,7 @@ export function SuiteDetailPage() {
                               {testCase.referenceLink}
                             </p>
                           )}
+                          <CaseAttachments caseId={testCase.id} canManage={canWriteCases} />
                         </div>
                       )
                     )}

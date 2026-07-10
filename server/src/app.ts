@@ -21,6 +21,7 @@ import { labelsRouter, labelsNestedRouter } from './modules/labels/routes';
 import { sharedStepSetsRouter, sharedStepSetsNestedRouter, promoteSharedStepsRouter } from './modules/sharedSteps/routes';
 import { configGroupsRouter, configGroupsNestedRouter, configsRouter } from './modules/configurations/routes';
 import { auditLogNestedRouter } from './modules/audit/routes';
+import { caseAttachmentsRouter, resultAttachmentsRouter, attachmentsRouter } from './modules/attachments/routes';
 import { meRouter } from './modules/me/routes';
 
 export const app = express();
@@ -59,7 +60,10 @@ app.use('/api/v1/suites', suitesRouter);
 app.use('/api/v1/sections/:sectionId/cases', casesBySectionRouter);
 app.use('/api/v1/sections', sectionsRouter);
 app.use('/api/v1/cases/:id/promote-shared-steps', promoteSharedStepsRouter);
+app.use('/api/v1/cases/:caseId/attachments', caseAttachmentsRouter);
 app.use('/api/v1/cases', casesRouter);
+app.use('/api/v1/results/:resultId/attachments', resultAttachmentsRouter);
+app.use('/api/v1/attachments', attachmentsRouter);
 app.use('/api/v1/shared-step-sets', sharedStepSetsRouter);
 app.use('/api/v1/config-groups', configGroupsRouter);
 app.use('/api/v1/configs', configsRouter);

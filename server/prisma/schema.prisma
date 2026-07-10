@@ -36,6 +36,7 @@ model User {
   assignedRunCases RunCase[]  @relation("RunCaseAssignee")
   results          Result[]
   auditLogs        AuditLog[]
+  attachments      Attachment[]
 }
 
 model RefreshToken {
@@ -265,6 +266,7 @@ model TestCase {
   runCases        RunCase[]
   labels          TestCaseLabel[]
   sharedStepLinks TestCaseSharedSteps[]
+  attachments     Attachment[]
 
   @@index([suiteId])
   @@index([sectionId])
@@ -394,7 +396,31 @@ model Result {
   enteredBy   User?    @relation(fields: [enteredById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
 
+  attachments Attachment[]
+
   @@index([runCaseId])
+}
+
+// Belongs to exactly one of TestCase or Result (never both, never neither) — enforced at the
+// application layer since SQLite/Prisma can't express an XOR constraint declaratively. Files
+// live on local disk under server/uploads/<id>-<filename> in dev; storagePath is the on-disk
+// path, not served directly — GET /attachments/:id streams it back with the right Content-Type.
+model Attachment {
+  id           String   @id @default(cuid())
+  filename     String
+  mimeType     String
+  size         Int
+  storagePath  String
+  caseId       String?
+  case         TestCase? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  resultId     String?
+  result       Result?   @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  uploadedById String?
+  uploadedBy   User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+
+  @@index([caseId])
+  @@index([resultId])
 }
 
 // ── integrations ──────────────────────────────────────
