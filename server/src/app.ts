@@ -22,6 +22,10 @@ import {
   casesReportsRouter,
   defectsReportsRouter,
   resultsReportsRouter,
+  milestoneSummaryReportRouter,
+  planSummaryReportRouter,
+  projectSummaryReportRouter,
+  runsSummaryReportRouter,
 } from './modules/reports/routes';
 import { webhooksRouter, webhooksNestedRouter } from './modules/webhooks/routes';
 import { labelsRouter, labelsNestedRouter } from './modules/labels/routes';
@@ -58,6 +62,10 @@ app.use('/api/v1/projects/:projectId/defects', defectsRouter);
 app.use('/api/v1/projects/:projectId/reports/cases', casesReportsRouter);
 app.use('/api/v1/projects/:projectId/reports/defects', defectsReportsRouter);
 app.use('/api/v1/projects/:projectId/reports/results', resultsReportsRouter);
+app.use('/api/v1/projects/:projectId/reports/runs-summary', runsSummaryReportRouter);
+app.use('/api/v1/projects/:projectId/reports/summary', projectSummaryReportRouter);
+app.use('/api/v1/milestones/:milestoneId/reports/summary', milestoneSummaryReportRouter);
+app.use('/api/v1/plans/:planId/reports/summary', planSummaryReportRouter);
 app.use('/api/v1/projects/:projectId/webhooks', webhooksNestedRouter);
 app.use('/api/v1/projects/:projectId/labels', labelsNestedRouter);
 app.use('/api/v1/projects/:projectId/shared-step-sets', sharedStepSetsNestedRouter);

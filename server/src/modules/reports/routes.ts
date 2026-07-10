@@ -14,6 +14,7 @@ import {
   getComparisonForReferences,
   getResultPropertyDistribution,
 } from './resultsReports';
+import { buildSummaryReport, parseRunsScopeQuery } from './summaryReports';
 
 // Mounted at /api/v1/projects/:projectId/dashboard
 export const dashboardRouter = Router({ mergeParams: true });
@@ -245,5 +246,53 @@ resultsReportsRouter.get(
   '/property-distribution',
   asyncHandler(async (req, res) => {
     res.json(await getResultPropertyDistribution(req.params.projectId, req.query as Record<string, unknown>));
+  }),
+);
+
+// ── Summary Reports ─────────────────────────────────────────────────────
+// Four scope types, one shared aggregation core (buildSummaryReport). Milestone/Plan mount
+// under their own resource path (matching the milestones/plans modules' own `/milestones/:id`
+// and `/plans/:id` convention) since a report "for milestone X" isn't naturally nested under a
+// project path the way the run-scoped reports above are.
+
+export const milestoneSummaryReportRouter = Router({ mergeParams: true });
+milestoneSummaryReportRouter.use(requireAuth);
+milestoneSummaryReportRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    res.json(await buildSummaryReport({ type: 'milestone', id: req.params.milestoneId }, req.query as Record<string, unknown>));
+  }),
+);
+
+export const planSummaryReportRouter = Router({ mergeParams: true });
+planSummaryReportRouter.use(requireAuth);
+planSummaryReportRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    res.json(await buildSummaryReport({ type: 'plan', id: req.params.planId }, req.query as Record<string, unknown>));
+  }),
+);
+
+// Mounted at /api/v1/projects/:projectId/reports/summary (project scope) and
+// /api/v1/projects/:projectId/reports/runs-summary (explicit runIds scope) — both project-
+// scoped for the auth/data-boundary check even though "runs" scope takes an explicit id list.
+// Named runs-summary (not summary-runs) specifically so it isn't a string-prefix of the
+// sibling /reports/summary mount path, sidestepping any doubt about Express's app.use()
+// prefix-matching semantics rather than relying on it being boundary-aware.
+export const projectSummaryReportRouter = Router({ mergeParams: true });
+projectSummaryReportRouter.use(requireAuth);
+projectSummaryReportRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    res.json(await buildSummaryReport({ type: 'project', id: req.params.projectId }, req.query as Record<string, unknown>));
+  }),
+);
+
+export const runsSummaryReportRouter = Router({ mergeParams: true });
+runsSummaryReportRouter.use(requireAuth);
+runsSummaryReportRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    res.json(await buildSummaryReport(parseRunsScopeQuery(req.query as Record<string, unknown>), req.query as Record<string, unknown>));
   }),
 );

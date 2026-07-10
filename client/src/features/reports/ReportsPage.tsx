@@ -10,6 +10,10 @@ import { DefectsSummaryForReferencesReport } from './defects/DefectsSummaryForRe
 import { ComparisonForCasesReport } from './results/ComparisonForCasesReport';
 import { ComparisonForReferencesReport } from './results/ComparisonForReferencesReport';
 import { ResultPropertyDistributionReport } from './results/ResultPropertyDistributionReport';
+import { MilestoneSummaryReport } from './summary/MilestoneSummaryReport';
+import { PlanSummaryReport } from './summary/PlanSummaryReport';
+import { ProjectSummaryReport } from './summary/ProjectSummaryReport';
+import { RunsSummaryReport } from './summary/RunsSummaryReport';
 
 interface ReportDef {
   key: string;
@@ -49,6 +53,15 @@ const CATEGORIES: ReportCategory[] = [
       { key: 'results-comparison-for-cases', label: 'Comparison for Cases', Component: ComparisonForCasesReport },
       { key: 'results-comparison-for-references', label: 'Comparison for References', Component: ComparisonForReferencesReport },
       { key: 'results-property-distribution', label: 'Property Distribution', Component: ResultPropertyDistributionReport },
+    ],
+  },
+  {
+    label: 'Summary',
+    reports: [
+      { key: 'summary-milestone', label: 'Milestone', Component: MilestoneSummaryReport },
+      { key: 'summary-plan', label: 'Plan', Component: PlanSummaryReport },
+      { key: 'summary-project', label: 'Project', Component: ProjectSummaryReport },
+      { key: 'summary-runs', label: 'Runs', Component: RunsSummaryReport },
     ],
   },
 ];
