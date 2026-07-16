@@ -60,6 +60,49 @@ describe('Defects Reports (run-scoped)', () => {
     expect(bug1.resolvedCount).toBe(1);
   });
 
+  // Regression test: defect IDs were grouped by the raw string, so "BUG-1" and "bug-1" (a real,
+  // ordinary scenario — one tester types it, another pastes it from an issue tracker with
+  // different casing) fragmented into two unrelated-looking defect rows instead of one.
+  it('groups defect IDs case-insensitively, keeping the first-seen casing for display', async () => {
+    const { projectId, run1Id, run2Id, caseBId } = await seed();
+    const run2Tests = (await request(app).get(`/api/v1/runs/${run2Id}/tests`).set(auth())).body.tests;
+    const testForCaseB = run2Tests.find((t: { caseId: string }) => t.caseId === caseBId).id;
+    await request(app).post(`/api/v1/tests/${testForCaseB}/results`).set(auth()).send({ status: 'FAILED', defects: 'bug-1' });
+
+    const res = await request(app).get(`/api/v1/projects/${projectId}/reports/defects/summary?runIds=${run1Id},${run2Id}`).set(auth());
+    expect(res.status).toBe(200);
+    const bug1Rows = res.body.defects.filter((d: { id: string }) => d.id.toUpperCase() === 'BUG-1');
+    expect(bug1Rows).toHaveLength(1);
+    expect(bug1Rows[0].id).toBe('BUG-1'); // first-seen casing, from seed()'s own "BUG-1" mentions
+    // 3 mentions total: Case A/Run1 ("BUG-1"), Case A/Run2 ("BUG-1"), Case B/Run2 ("bug-1", added above)
+    expect(bug1Rows[0].count).toBe(3);
+  });
+
+  // Regression test: the cross-result case-insensitive grouping fix above didn't cover this
+  // case — a SINGLE result's defects field containing multiple casings of the same logical ID
+  // (e.g. a tester typing "bug-100, BUG-100, Bug-100") survived parseReferences's exact-string
+  // dedup as 3 distinct entries, each independently incrementing count/openCount for what's
+  // really one failing test mentioning one defect once.
+  it('does not multiply-count multiple casings of the same defect ID within a single result', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: `Same Result Dedup ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth()).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth()).send({ name: 'Section' });
+    await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth()).send({ title: 'Case' });
+    const run = await request(app).post(`/api/v1/projects/${project.body.project.id}/runs`).set(auth()).send({ name: 'Run', suiteId: suite.body.suite.id });
+    const tests = (await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth())).body.tests;
+    await request(app)
+      .post(`/api/v1/tests/${tests[0].id}/results`)
+      .set(auth())
+      .send({ status: 'FAILED', defects: 'bug-100, BUG-100, Bug-100' });
+
+    const res = await request(app).get(`/api/v1/projects/${project.body.project.id}/reports/defects/summary?runIds=${run.body.run.id}`).set(auth());
+    expect(res.status).toBe(200);
+    const bug100 = res.body.defects.find((d: { id: string }) => d.id.toUpperCase() === 'BUG-100');
+    expect(bug100.count).toBe(1);
+    expect(bug100.openCount).toBe(1);
+    expect(bug100.cases).toHaveLength(1);
+  });
+
   it('Summary for Cases shows only cases with a defect somewhere in the matrix, with per-run cells', async () => {
     const { projectId, run1Id, run2Id, caseAId, caseBId } = await seed();
     const res = await request(app)
@@ -112,6 +155,26 @@ describe('Results Reports (run-scoped)', () => {
     expect(res.body.references[0].cases.map((c: { caseId: string }) => c.caseId)).toEqual([caseAId]);
   });
 
+  // Regression test for the reason RunCase.referenceLinkSnapshot exists at all: Comparison for
+  // References previously read TestCase.referenceLink LIVE via the case join, so editing a
+  // case's reference after a run already had results retroactively moved that run's history
+  // into the new bucket — silently contradicting this app's own stated principle that editing
+  // or deleting a case must never corrupt historical run results (see root/server CLAUDE.md).
+  it('keeps a run grouped under its original reference after the case\'s reference is edited', async () => {
+    const { projectId, run1Id, run2Id, caseAId } = await seed();
+    await request(app).patch(`/api/v1/cases/${caseAId}`).set(auth()).send({ referenceLink: 'TRM-CHANGED-LATER' });
+
+    const res = await request(app)
+      .get(`/api/v1/projects/${projectId}/reports/results/comparison-for-references?runIds=${run1Id},${run2Id}`)
+      .set(auth());
+    expect(res.status).toBe(200);
+    // The historical run data must stay under the ORIGINAL reference, not the case's new one.
+    expect(res.body.references.map((r: { reference: string }) => r.reference)).toContain('TRM-1');
+    expect(res.body.references.map((r: { reference: string }) => r.reference)).not.toContain('TRM-CHANGED-LATER');
+    const trm1 = res.body.references.find((r: { reference: string }) => r.reference === 'TRM-1');
+    expect(trm1.cases.map((c: { caseId: string }) => c.caseId)).toEqual([caseAId]);
+  });
+
   it('Property Distribution groups tests by status across the selected runs by default', async () => {
     const { projectId, run1Id, run2Id } = await seed();
     const res = await request(app)
@@ -126,5 +189,44 @@ describe('Results Reports (run-scoped)', () => {
         { value: 'UNTESTED', count: 1, percent: 0.25 },
       ]),
     );
+  });
+
+  // Regression test: grouping by assignedTo previously keyed on the display NAME, not the user
+  // id — two different users who happen to share a name were silently merged into one bucket.
+  // This codebase already has the correct id-then-resolve-to-name pattern one file over
+  // (GET /me/workload); this report should match it.
+  it('Property Distribution groups by assignedTo using user id, not display name, so same-named users stay separate', async () => {
+    const { projectId, run1Id } = await seed();
+    const userA = await request(app)
+      .post('/api/v1/users')
+      .set(auth())
+      .send({ email: `dup-a-${Date.now()}@example.com`, name: 'QA Auditor Dup', role: 'TESTER', password: 'TesterPass123!' });
+    const userB = await request(app)
+      .post('/api/v1/users')
+      .set(auth())
+      .send({ email: `dup-b-${Date.now()}@example.com`, name: 'QA Auditor Dup', role: 'TESTER', password: 'TesterPass123!' });
+    const run1Tests = (await request(app).get(`/api/v1/runs/${run1Id}/tests`).set(auth())).body.tests;
+    await request(app)
+      .post(`/api/v1/runs/${run1Id}/tests/bulk-assign`)
+      .set(auth())
+      .send({ testIds: [run1Tests[0].id], assignedToId: userA.body.user.id });
+    await request(app)
+      .post(`/api/v1/runs/${run1Id}/tests/bulk-assign`)
+      .set(auth())
+      .send({ testIds: [run1Tests[1].id], assignedToId: userB.body.user.id });
+
+    const res = await request(app)
+      .get(`/api/v1/projects/${projectId}/reports/results/property-distribution?runIds=${run1Id}&groupBy=assignedTo`)
+      .set(auth());
+    expect(res.status).toBe(200);
+    // If grouping were still keyed on display name (the bug), userA and userB's one test each
+    // would merge into a single { value: 'QA Auditor Dup', count: 2 } bucket. Grouped correctly
+    // by id, they stay as two separate buckets that both happen to display the same name.
+    const dupBuckets = res.body.buckets.filter((b: { value: string }) => b.value === 'QA Auditor Dup');
+    expect(dupBuckets).toHaveLength(2);
+    expect(dupBuckets).toEqual([
+      { value: 'QA Auditor Dup', count: 1, percent: 0.5 },
+      { value: 'QA Auditor Dup', count: 1, percent: 0.5 },
+    ]);
   });
 });

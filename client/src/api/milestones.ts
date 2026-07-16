@@ -34,3 +34,7 @@ export function updateMilestone(
 export function deleteMilestone(id: string) {
   return apiFetch<void>(`/milestones/${id}`, { method: 'DELETE' });
 }
+
+export function getMilestoneDeleteImpact(id: string) {
+  return apiFetch<{ planCount: number; runCount: number; childMilestoneCount: number }>(`/milestones/${id}/delete-impact`);
+}

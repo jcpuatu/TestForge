@@ -323,3 +323,101 @@ describe('project → suite → section → case CRUD', () => {
     expect(exported.text).toContain('Given I am on the login page');
   });
 });
+
+describe('orderIndex assignment', () => {
+  // Regression test: neither createSectionSchema nor createCaseSchema exposed an orderIndex
+  // field, and no create route ever computed one — every fresh sibling silently defaulted to the
+  // Prisma schema default of 0, making "default order" undefined behavior rather than actually
+  // reflecting creation order.
+  it('assigns sequential, non-colliding orderIndex to fresh sibling cases', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `OrderIndex Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+
+    const caseA = await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth(adminToken)).send({ title: 'A' });
+    const caseB = await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth(adminToken)).send({ title: 'B' });
+    const caseC = await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth(adminToken)).send({ title: 'C' });
+
+    expect([caseA.body.case.orderIndex, caseB.body.case.orderIndex, caseC.body.case.orderIndex]).toEqual([0, 1, 2]);
+  });
+
+  it('assigns sequential, non-colliding orderIndex to fresh sibling sections', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `OrderIndex Section Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+
+    const sectionA = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'A' });
+    const sectionB = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'B' });
+
+    expect([sectionA.body.section.orderIndex, sectionB.body.section.orderIndex]).toEqual([0, 1]);
+  });
+});
+
+describe('PATCH /cases/:id clearing optional fields', () => {
+  // Regression test: the client used to send `value || undefined` for these fields, which the
+  // JSON layer drops entirely — the server (correctly) treats an absent key as "don't touch,"
+  // so a tester who cleared a field and saved got a silent no-op, not an actual clear. This test
+  // exercises the server contract directly: an explicit empty string must clear the field.
+  it('clears preconditions/expectedResult/estimate/referenceLink when explicitly sent as empty strings', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Clear Fields Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+    const created = await request(app)
+      .post(`/api/v1/sections/${section.body.section.id}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Case', preconditions: 'Some preconditions', expectedResult: 'Some result', estimate: '10m', referenceLink: 'REQ-1' });
+    const caseId = created.body.case.id;
+
+    const cleared = await request(app)
+      .patch(`/api/v1/cases/${caseId}`)
+      .set(auth(adminToken))
+      .send({ preconditions: '', expectedResult: '', estimate: '', referenceLink: '' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.case).toMatchObject({ preconditions: '', expectedResult: '', estimate: '', referenceLink: '' });
+
+    const refetched = await request(app).get(`/api/v1/cases/${caseId}`).set(auth(adminToken));
+    expect(refetched.body.case).toMatchObject({ preconditions: '', expectedResult: '', estimate: '', referenceLink: '' });
+  });
+
+  // Regression test: switching a multi-step STEPS case to TEXT (or clearing the STEPS textarea
+  // entirely) used to send `steps: undefined` for an empty box, which the server treats as
+  // "don't touch" — the old multi-step data silently survived the very save meant to remove it.
+  it('clears steps when explicitly sent as an empty array', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Clear Steps Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+    const created = await request(app)
+      .post(`/api/v1/sections/${section.body.section.id}/cases`)
+      .set(auth(adminToken))
+      .send({ title: 'Steps Case', template: 'STEPS', steps: [{ step: 'One', expected: 'A' }, { step: 'Two', expected: 'B' }] });
+    const caseId = created.body.case.id;
+
+    const cleared = await request(app).patch(`/api/v1/cases/${caseId}`).set(auth(adminToken)).send({ steps: [] });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.case.steps).toEqual([]);
+  });
+});
+
+describe('cross-suite sectionId validation', () => {
+  // Regression test: sectionId was accepted with no check that it belonged to the same suite as
+  // the case's own (unchanged) suiteId — TestCase.suiteId and TestCase.sectionId are independent
+  // columns, so this produced a genuinely split/orphaned case: still counted in its original
+  // suite's case list by suiteId, but also showing up when browsing the new suite by sectionId.
+  it('rejects moving a case into a section that belongs to a different suite', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Cross Suite Test ${Date.now()}` });
+    const projectId = project.body.project.id;
+    const suiteA = await request(app).post(`/api/v1/projects/${projectId}/suites`).set(auth(adminToken)).send({ name: 'Suite A' });
+    const suiteB = await request(app).post(`/api/v1/projects/${projectId}/suites`).set(auth(adminToken)).send({ name: 'Suite B' });
+    const sectionA = await request(app).post(`/api/v1/suites/${suiteA.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section A' });
+    const sectionB = await request(app).post(`/api/v1/suites/${suiteB.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section B' });
+    const created = await request(app).post(`/api/v1/sections/${sectionA.body.section.id}/cases`).set(auth(adminToken)).send({ title: 'Case' });
+
+    const moved = await request(app).patch(`/api/v1/cases/${created.body.case.id}`).set(auth(adminToken)).send({ sectionId: sectionB.body.section.id });
+    expect(moved.status).toBe(400);
+
+    const bulkMoved = await request(app)
+      .patch('/api/v1/cases/bulk-update')
+      .set(auth(adminToken))
+      .send({ caseIds: [created.body.case.id], sectionId: sectionB.body.section.id });
+    expect(bulkMoved.status).toBe(400);
+  });
+});

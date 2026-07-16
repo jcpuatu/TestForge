@@ -44,14 +44,39 @@ describe('CSV import/export', () => {
     expect(cases.body.cases).toHaveLength(2);
     const withSteps = cases.body.cases.find((c: { title: string }) => c.title === 'Valid login succeeds');
     expect(withSteps.steps).toEqual([{ step: 'Enter creds', expected: 'Dashboard shown' }]);
+    expect(withSteps.template).toBe('STEPS');
     const withComma = cases.body.cases.find((c: { title: string }) => c.title === 'Title, with a comma');
     expect(withComma).toBeTruthy();
+    expect(withComma.template).toBe('TEXT');
 
     const exportRes = await request(app).get(`/api/v1/suites/${suiteId}/cases/export`).set(auth());
     expect(exportRes.status).toBe(200);
     expect(exportRes.headers['content-type']).toContain('text/csv');
     expect(exportRes.text).toContain('Valid login succeeds');
     expect(exportRes.text).toContain('"Title, with a comma"');
+  });
+
+  it('strips a leading UTF-8 BOM so the section column header still matches', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: 'CSV BOM Project' });
+    const suite = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/suites`)
+      .set(auth())
+      .send({ name: 'Suite' });
+    const suiteId = suite.body.suite.id;
+
+    const csv =
+      '﻿' +
+      ['section,title,priority,type,preconditions,steps,expectedResult,referenceLink', 'Login,Valid login succeeds,HIGH,SMOKE,,,,'].join(
+        '\n',
+      );
+
+    const importRes = await request(app).post(`/api/v1/suites/${suiteId}/cases/import`).set(auth()).send({ csv });
+    expect(importRes.status).toBe(201);
+    expect(importRes.body.imported).toBe(1);
+
+    const sections = await request(app).get(`/api/v1/suites/${suiteId}/sections`).set(auth());
+    expect(sections.body.sections).toHaveLength(1);
+    expect(sections.body.sections[0].name).toBe('Login');
   });
 
   it('rejects a CSV missing the required title column', async () => {
@@ -122,5 +147,32 @@ describe('CSV import/export', () => {
     expect(filtered.text).toContain('Case A');
     expect(filtered.text).not.toContain('Case B');
     expect(filtered.text.split('\r\n')[0]).toBe('title,priority');
+  });
+
+  // Regression tests: CSV import built its case rows directly from raw cell text with none of
+  // createCaseSchema's validation — a blank title cell silently created a titleless case, and a
+  // row shorter than the header (title column landing on `undefined`) either did the same or,
+  // depending on which column the shortfall hit, 500'd instead of failing cleanly.
+  describe('validates rows the way the JSON API does', () => {
+    async function importCsv(csv: string) {
+      const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: `CSV Validation ${Date.now()}-${Math.random()}` });
+      const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth()).send({ name: 'Suite' });
+      return request(app).post(`/api/v1/suites/${suite.body.suite.id}/cases/import`).set(auth()).send({ csv });
+    }
+
+    it('rejects a blank title cell instead of silently creating a titleless case', async () => {
+      const res = await importCsv('title,priority\n,HIGH');
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a row shorter than the header that leaves title undefined', async () => {
+      const res = await importCsv('foo,title\nonly-one-value');
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a title over 300 characters', async () => {
+      const res = await importCsv(`title\n${'x'.repeat(301)}`);
+      expect(res.status).toBe(400);
+    });
   });
 });

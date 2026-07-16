@@ -19,7 +19,7 @@ export function ProjectSummaryReport({ projectId }: { projectId: string }) {
   return (
     <ReportShell
       title="Project Summary"
-      description="Overview of progress and testing activity across every milestone in this project."
+      description="Overview of progress and testing activity across every test run in this project."
       filters={
         <DateRangePresetPicker
           preset={preset}

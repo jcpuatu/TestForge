@@ -35,4 +35,64 @@ body {
     max-width: 100% !important;
     padding: 0 !important;
   }
+  /* Outline/Details print modes (PrintButton.tsx toggles `print-outline` on <html>) — matches
+     TestRail's own print-report customization: Outline shows names/status only, Details shows
+     everything, including secondary content (comments, defects, steps, result history) marked
+     `.print-detail-only` on the page. Details is the default (no class), so existing pages that
+     haven't been audited for this yet still print everything they always did. */
+  html.print-outline .print-detail-only {
+    display: none !important;
+  }
+
+  /* Without this, most browsers strip background-color entirely when printing by default (the
+     "don't waste ink on backgrounds" setting) — every status bar segment, status badge, and
+     priority pill in this app IS a plain background-color div/span with no border or icon
+     fallback, so without this override they silently printed as blank, colorless boxes,
+     defeating the color-as-signal convention this app relies on everywhere. Real bug, not
+     hypothetical — confirmed no browsers print bg-color without this. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Dark-mode text (`dark:text-slate-100` etc.) stays active while printing, since the `dark`
+     class on <html> is still present in the DOM regardless of print media — combined with the
+     forced white page background above, that's white-on-white text, unreadable. Force real dark
+     text for print output unconditionally, independent of whatever theme was active on screen.
+     Background colors are a separate CSS property and are unaffected by this. */
+  body,
+  body * {
+    color: black !important;
+  }
+
+  /* A real report template, not just the interactive page with nav hidden — matches TestRail's
+     own framing ("format the data for you as a report"), not just a webpage screenshot. First
+     attempt just stripped card chrome to nothing, which left content floating as unstructured
+     loose text with no visual grouping at all — worse, not better. Replaced with a genuine
+     document look: every card becomes a clean squared-off bordered box (no rounding/shadow/tint,
+     but a real border stays so grouped data still reads as grouped), and section labels get an
+     actual heading treatment (see print:border-b usage in each report page) instead of staying
+     tiny uppercase UI micro-text. */
+  .print-report .print-card {
+    border: 1px solid #94a3b8 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+  /* Row-list cards (Runs in scope, Tests, defect lists, etc.) use a parent `divide-y` utility for
+     on-screen row separators — Tailwind's divide-y border is faint slate-200/700 by design for a
+     subtle screen UI, which reads as basically invisible against forced-white print output.
+     Strengthen every non-first direct-child row with a real, visible top border so these read as
+     actual table rows on paper, not loose stacked text. */
+  .print-report .print-card > * + * {
+    border-top: 1px solid #94a3b8 !important;
+  }
+  .print-report table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+  .print-report th,
+  .print-report td {
+    border: 1px solid #94a3b8 !important;
+  }
 }

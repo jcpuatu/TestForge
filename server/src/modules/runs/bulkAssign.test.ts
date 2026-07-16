@@ -123,4 +123,33 @@ describe('bulk result entry', () => {
     const refreshed = await request(app).get(`/api/v1/runs/${runA.id}/tests`).set(auth());
     expect(refreshed.body.tests.find((t: { id: string }) => t.id === testsA[0].id).status).toBe('UNTESTED');
   });
+
+  // Real user-reported bug: the old testIds cap was 500, which a genuine "select all" on a
+  // real-world 500+ case CSV import (this app's own bulk-import feature) exceeds routinely —
+  // the request silently failed validation with no visible feedback on the client. Confirms the
+  // cap was actually raised, not just that a small batch still works.
+  it('accepts a bulk result submission well over the old 500-item cap', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: 'Large Bulk Result Project' });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth()).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth()).send({ name: 'Section' });
+    await Promise.all(
+      Array.from({ length: 501 }, (_, i) =>
+        request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth()).send({ title: `Case ${i}` }),
+      ),
+    );
+    const run = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/runs`)
+      .set(auth())
+      .send({ name: 'Large Run', suiteId: suite.body.suite.id });
+    const tests = await request(app).get(`/api/v1/runs/${run.body.run.id}/tests`).set(auth());
+    const ids = tests.body.tests.map((t: { id: string }) => t.id);
+    expect(ids.length).toBe(501);
+
+    const res = await request(app)
+      .post(`/api/v1/runs/${run.body.run.id}/tests/bulk-result`)
+      .set(auth())
+      .send({ testIds: ids, status: 'PASSED' });
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(501);
+  }, 30000);
 });

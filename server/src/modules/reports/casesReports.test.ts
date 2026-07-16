@@ -144,5 +144,37 @@ describe('Cases Reports', () => {
       expect(res.status).toBe(200);
       expect(res.body.runs.map((r: { id: string }) => r.id)).toContain(run.body.run.id);
     });
+
+    // Regression test: `latestOnly` (the default) previously kept the OLDEST RunCase per case,
+    // not the newest — `new Map(pairs)` keeps the LAST occurrence of a duplicate key, but the
+    // source array is sorted newest-first, so "last occurrence" was actually the oldest row.
+    // A case that appears in two selected runs, with a different (and later) result in the
+    // second run, must report the second run's status — the whole point of "latest."
+    it('reports the status from the most recently updated run when the same case appears in multiple selected runs', async () => {
+      const { projectId, suiteId, caseHigh } = await seedProjectWithCases();
+
+      const runOlder = await request(app)
+        .post(`/api/v1/projects/${projectId}/runs`)
+        .set(auth())
+        .send({ name: 'Older Run', suiteId, caseIds: [caseHigh.id] });
+      const olderTests = await request(app).get(`/api/v1/runs/${runOlder.body.run.id}/tests`).set(auth());
+      await request(app).post(`/api/v1/tests/${olderTests.body.tests[0].id}/results`).set(auth()).send({ status: 'FAILED' });
+
+      const runNewer = await request(app)
+        .post(`/api/v1/projects/${projectId}/runs`)
+        .set(auth())
+        .send({ name: 'Newer Run', suiteId, caseIds: [caseHigh.id] });
+      const newerTests = await request(app).get(`/api/v1/runs/${runNewer.body.run.id}/tests`).set(auth());
+      await request(app).post(`/api/v1/tests/${newerTests.body.tests[0].id}/results`).set(auth()).send({ status: 'PASSED' });
+
+      const res = await request(app)
+        .get(`/api/v1/projects/${projectId}/reports/cases/status-tops?runIds=${runOlder.body.run.id},${runNewer.body.run.id}`)
+        .set(auth());
+      expect(res.status).toBe(200);
+      expect(res.body.latestOnly).toBe(true);
+      const caseRow = res.body.cases.find((c: { caseId: string }) => c.caseId === caseHigh.id);
+      expect(caseRow.status).toBe('PASSED');
+      expect(caseRow.runId).toBe(runNewer.body.run.id);
+    });
   });
 });

@@ -31,6 +31,16 @@ plansNestedRouter.post(
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
     const body = createPlanSchema.parse(req.body);
+    // Unvalidated before this, a plan's milestoneId could reference a milestone in a completely
+    // different project — confirmed live (see test) to leak that foreign milestone's name/dates
+    // into this plan's own Date Inheritance display, including on a plan that already has real
+    // run history.
+    if (body.milestoneId) {
+      const milestone = await prisma.milestone.findUnique({ where: { id: body.milestoneId } });
+      if (!milestone || milestone.projectId !== req.params.projectId) {
+        throw new NotFoundError('Milestone');
+      }
+    }
     const plan = await prisma.testPlan.create({
       data: {
         ...body,
@@ -72,6 +82,12 @@ plansRouter.patch(
     if (!existing) throw new NotFoundError('Plan');
     if (existing.isCompleted && (body.startDate !== undefined || body.endDate !== undefined)) {
       throw new BadRequestError('Cannot change dates on a completed plan');
+    }
+    if (body.milestoneId) {
+      const milestone = await prisma.milestone.findUnique({ where: { id: body.milestoneId } });
+      if (!milestone || milestone.projectId !== existing.projectId) {
+        throw new NotFoundError('Milestone');
+      }
     }
     const data: Record<string, unknown> = { ...body };
     if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;

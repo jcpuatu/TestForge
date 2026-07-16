@@ -4,6 +4,10 @@ import { Button } from '../../components/Button';
 import { Field, Input, Label } from '../../components/Input';
 
 const JIRA_URL_STORAGE_KEY = 'testforge:jiraCreateUrl';
+// Gates both the button's visibility and the actual window.open call — the saved value is
+// user-typed, browser-local free text with no server-side validation anywhere in this app, so a
+// javascript:-scheme or otherwise malformed value must never reach window.open unchecked.
+const JIRA_URL_PATTERN = /^https?:\/\//i;
 
 function buildDraft(test: RunCase, run: TestRun, comment: string | undefined, reporterName: string | undefined): { title: string; description: string } {
   const title = `[${run.name}] ${test.titleSnapshot}`;
@@ -55,7 +59,7 @@ export function DraftDefectPanel({
   }
 
   function handleOpenInJira() {
-    if (!jiraUrl) return;
+    if (!jiraUrl || !JIRA_URL_PATTERN.test(jiraUrl)) return;
     const params = new URLSearchParams({ summary: title, description });
     const separator = jiraUrl.includes('?') ? '&' : '?';
     window.open(`${jiraUrl}${separator}${params.toString()}`, '_blank', 'noopener');
@@ -78,7 +82,7 @@ export function DraftDefectPanel({
         <Button variant="secondary" onClick={handleCopy}>
           {copied ? 'Copied!' : 'Copy to clipboard'}
         </Button>
-        {jiraUrl && (
+        {jiraUrl && JIRA_URL_PATTERN.test(jiraUrl) && (
           <Button variant="secondary" onClick={handleOpenInJira}>
             Open in Jira
           </Button>

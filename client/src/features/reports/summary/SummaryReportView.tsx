@@ -31,7 +31,7 @@ export function SummaryReportView({ data, csvFilename }: { data: SummaryReportDa
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+      <div className="print-card rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
         <p className="mb-2 text-sm text-slate-700 dark:text-slate-300">
           {data.total} test(s) across {data.runs.length} run(s)
           {data.passRate !== null && <> · {Math.round(data.passRate * 100)}% pass rate</>}
@@ -56,8 +56,8 @@ export function SummaryReportView({ data, csvFilename }: { data: SummaryReportDa
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div className="print-card rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 print:text-sm print:tracking-normal print:border-b print:border-black print:pb-1">
           Activity ({new Date(data.activityFrom).toLocaleDateString()} – {new Date(data.activityTo).toLocaleDateString()})
         </p>
         <ActivityOverTimeChart
@@ -67,15 +67,15 @@ export function SummaryReportView({ data, csvFilename }: { data: SummaryReportDa
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <div className="print-card rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{Math.round(data.progress.percentComplete * 100)}%</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">Complete</p>
         </div>
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <div className="print-card rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{data.progress.remainingCount}</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">Remaining</p>
         </div>
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <div className="print-card rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <p className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
             {data.progress.estimatedDaysRemaining !== null ? `~${data.progress.estimatedDaysRemaining}d` : '—'}
           </p>
@@ -84,8 +84,8 @@ export function SummaryReportView({ data, csvFilename }: { data: SummaryReportDa
       </div>
 
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Runs in scope</p>
-        <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 print:text-sm print:tracking-normal print:border-b print:border-black print:pb-1">Runs in scope</p>
+        <div className="print-card divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           {data.runs.map((r) => (
             <div key={r.id} className="flex items-center justify-between p-2.5 text-sm">
               <span className="text-slate-700 dark:text-slate-300">{r.name}</span>
@@ -97,8 +97,8 @@ export function SummaryReportView({ data, csvFilename }: { data: SummaryReportDa
       </div>
 
       <div>
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <div className="mb-2 flex items-center justify-between print:border-b print:border-black print:pb-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 print:text-sm print:tracking-normal">
             Tests
             {statusFilter && (
               <button onClick={() => setStatusFilter(null)} className="no-print ml-2 font-normal text-blue-600 dark:text-blue-400 hover:underline">
@@ -108,7 +108,7 @@ export function SummaryReportView({ data, csvFilename }: { data: SummaryReportDa
           </p>
           <DownloadCsvButton onClick={handleDownload} />
         </div>
-        <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+        <div className="print-card divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
           {visibleTests.map((t) => (
             <div key={t.id} className="flex items-center justify-between p-2.5 text-sm">
               <span className="text-slate-700 dark:text-slate-300">{t.title}</span>

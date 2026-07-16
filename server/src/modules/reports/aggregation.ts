@@ -28,10 +28,16 @@ export function groupByField<T>(rows: T[], getField: (row: T) => string): Distri
 // convention in reports/routes.ts's defectsRouter.
 export function parseReferences(value: string | null | undefined): string[] {
   if (!value) return [];
-  return value
+  const parts = value
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  // Exact-duplicate dedup (e.g. a copy/paste slip typing "BUG-100, BUG-100") — safe for every
+  // caller of this shared parser, not just defect aggregation: nobody wants a case's own
+  // reference list or a result's defect list double-counting a literal repeat. Order-preserving
+  // (first occurrence kept) rather than a Set round-trip, so callers that care about original
+  // ordering aren't affected.
+  return parts.filter((s, i) => parts.indexOf(s) === i);
 }
 
 export type ActivityPeriod = 'day' | 'month';
@@ -68,8 +74,19 @@ export function fillPeriodGaps(buckets: ActivityBucket[], from: Date, to: Date, 
   while (cursor <= to) {
     const key = periodKey(cursor, period);
     if (!filled.some((b) => b.period === key)) filled.push({ period: key, count: byPeriod.get(key) ?? 0 });
-    if (period === 'day') cursor.setUTCDate(cursor.getUTCDate() + 1);
-    else cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    if (period === 'day') {
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    } else {
+      // Date.setUTCMonth doesn't clamp an out-of-range day-of-month on overflow — e.g.
+      // 2026-01-31 + 1 month lands on 2026-03-03 (February only has 28 days), silently
+      // skipping February's key entirely on every later iteration too, which meant real
+      // activity data for a skipped month was dropped from the report outright, not just
+      // missing its zero-placeholder. periodKey() only reads the YYYY-MM portion for month
+      // buckets (see above), so pinning the day to 1 before advancing is always safe here and
+      // keeps every later month-increment exact.
+      cursor.setUTCDate(1);
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
   }
   return filled;
 }

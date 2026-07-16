@@ -80,7 +80,7 @@ export function ActivitySummaryReport({ projectId }: { projectId: string }) {
           </div>
 
           {data.series && (
-            <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+            <div className="print-card mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
               <ActivityOverTimeChart
                 data={data.series}
                 seriesKeys={[
@@ -92,7 +92,7 @@ export function ActivitySummaryReport({ projectId }: { projectId: string }) {
           )}
 
           {data.groups && (
-            <div className="mb-4 divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div className="print-card mb-4 divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
               {data.groups.map((g) => (
                 <div key={g.sectionId ?? 'none'} className="flex items-center justify-between p-2.5 text-sm">
                   <span className="text-slate-700 dark:text-slate-300">{g.sectionName}</span>
@@ -117,7 +117,7 @@ export function ActivitySummaryReport({ projectId }: { projectId: string }) {
               }
             />
           </div>
-          <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <div className="print-card divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
             {data.cases.slice(0, 100).map((c) => (
               <div key={`${c.id}-${c.changeType}`} className="flex items-center justify-between p-2.5 text-sm">
                 <span className="text-slate-700 dark:text-slate-300">{c.title}</span>

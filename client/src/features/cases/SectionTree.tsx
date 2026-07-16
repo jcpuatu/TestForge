@@ -175,16 +175,16 @@ export function SectionTree({
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const tree = useMemo(() => buildSectionTree(sections), [sections]);
 
-  const visible = useMemo(() => {
-    const hiddenAncestors = new Set<string>();
-    return tree.filter((node) => {
-      if (node.parentId && (hiddenAncestors.has(node.parentId) || collapsedIds.has(node.parentId))) {
-        hiddenAncestors.add(node.id);
-        return false;
-      }
-      return true;
-    });
-  }, [tree, collapsedIds]);
+  // Grouped by parent (not flattened) so each parent's children can render as a nested block
+  // immediately after that parent's own row — see renderChildren below.
+  const childrenByParentId = useMemo(() => {
+    const groups = new Map<string | null, TreeNode[]>();
+    for (const node of tree) {
+      const key = node.parentId;
+      groups.set(key, [...(groups.get(key) ?? []), node]);
+    }
+    return groups;
+  }, [tree]);
 
   function toggleCollapse(id: string) {
     setCollapsedIds((prev) => {
@@ -195,38 +195,22 @@ export function SectionTree({
     });
   }
 
-  // One SortableContext per sibling group (same parent) — reordering only ever happens within
-  // a group, so this deliberately doesn't let dnd-kit treat the whole tree as one flat list.
-  const siblingGroups = useMemo(() => {
-    const groups = new Map<string | null, string[]>();
-    for (const node of tree) {
-      const key = node.parentId;
-      groups.set(key, [...(groups.get(key) ?? []), node.id]);
-    }
-    return groups;
-  }, [tree]);
-
-  return (
-    <div className="space-y-0.5">
-      <div className="mb-1 flex justify-end gap-2 text-xs">
-        <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setCollapsedIds(new Set())}>
-          Expand all
-        </button>
-        <button
-          className="text-blue-600 dark:text-blue-400 hover:underline"
-          onClick={() => setCollapsedIds(new Set(tree.filter((n) => n.hasChildren).map((n) => n.id)))}
-        >
-          Collapse all
-        </button>
-      </div>
-      {[...siblingGroups.entries()].map(([parentId, ids]) => (
-        <SortableContext key={parentId ?? 'root'} items={ids} strategy={verticalListSortingStrategy}>
-          {ids
-            .map((id) => visible.find((n) => n.id === id))
-            .filter((n): n is TreeNode => !!n)
-            .map((node) => (
+  // Recurses so each parent's SortableContext (scoped to just its direct children — dnd-kit's
+  // usual nested-sortable-list pattern, reordering only ever happens within one sibling group)
+  // renders immediately under that parent's own row, keeping DOM order matching visual tree
+  // order at any depth. Previously all sibling groups were flattened into one Map keyed by
+  // parentId and rendered in Map-insertion order, which put every top-level section's row
+  // first, followed by each parent's children as separate trailing blocks — so a second parent
+  // section's row visually split apart from the first parent's own children.
+  function renderChildren(parentId: string | null) {
+    const nodes = childrenByParentId.get(parentId) ?? [];
+    if (nodes.length === 0) return null;
+    return (
+      <SortableContext items={nodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-0.5">
+          {nodes.map((node) => (
+            <div key={node.id}>
               <SectionRow
-                key={node.id}
                 node={node}
                 isActive={node.id === activeSectionId}
                 isEditing={editingSectionId === node.id}
@@ -241,9 +225,28 @@ export function SectionTree({
                 collapsed={collapsedIds.has(node.id)}
                 onToggleCollapse={() => toggleCollapse(node.id)}
               />
-            ))}
-        </SortableContext>
-      ))}
+              {!collapsedIds.has(node.id) && renderChildren(node.id)}
+            </div>
+          ))}
+        </div>
+      </SortableContext>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5">
+      <div className="mb-1 flex justify-end gap-2 text-xs">
+        <button className="text-blue-600 dark:text-blue-400 hover:underline" onClick={() => setCollapsedIds(new Set())}>
+          Expand all
+        </button>
+        <button
+          className="text-blue-600 dark:text-blue-400 hover:underline"
+          onClick={() => setCollapsedIds(new Set(tree.filter((n) => n.hasChildren).map((n) => n.id)))}
+        >
+          Collapse all
+        </button>
+      </div>
+      {renderChildren(null)}
       {tree.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No sections yet.</p>}
     </div>
   );

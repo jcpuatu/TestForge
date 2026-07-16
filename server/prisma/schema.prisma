@@ -367,6 +367,13 @@ model RunCase {
   missionSnapshot  String?
   goalsSnapshot    String?
   bddLinesSnapshot String?
+  // Added after a report-design audit found Comparison for References (and Property
+  // Distribution's Type grouping) reading TestCase.referenceLink/type LIVE via the case join
+  // instead of a frozen snapshot — editing a case's reference or type after a run had results
+  // silently moved that run's historical data into a different report bucket, violating this
+  // schema's own established snapshot-immutability principle (see titleSnapshot etc. above).
+  referenceLinkSnapshot String?
+  typeSnapshot          String? @default("FUNCTIONAL")
   priority         String
   status           String   @default("UNTESTED")
   assignedToId     String?

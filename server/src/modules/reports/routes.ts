@@ -25,7 +25,7 @@ dashboardRouter.get(
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId;
 
-    const [suiteCount, caseCount, runs, milestoneCount, planCount] = await Promise.all([
+    const [suiteCount, caseCount, runs, milestoneCount, planCount, activeGrouped] = await Promise.all([
       prisma.suite.count({ where: { projectId } }),
       prisma.testCase.count({ where: { suite: { projectId }, isDeleted: false } }),
       prisma.testRun.findMany({
@@ -36,6 +36,17 @@ dashboardRouter.get(
       }),
       prisma.milestone.count({ where: { projectId } }),
       prisma.testPlan.count({ where: { projectId } }),
+      // Scoped to every active (non-completed) run in the project, NOT just the 10 most recent
+      // ones fetched above — a real, confirmed bug: this dashboard's totals/passRate used to be
+      // computed from whatever the 10-recent-runs-regardless-of-status list happened to contain,
+      // which could include closed runs and silently disagreed with the cross-project dashboard's
+      // "active runs only" scoping for the identical project (reproduced: 50% vs 0% on the same
+      // data). This now matches that same scoping, and root CLAUDE.md's own claim that it does.
+      prisma.runCase.groupBy({
+        by: ['status'],
+        where: { run: { projectId, isCompleted: false } },
+        _count: { status: true },
+      }),
     ]);
 
     const runSummaries = await Promise.all(
@@ -60,17 +71,8 @@ dashboardRouter.get(
       }),
     );
 
-    const totals = runSummaries.reduce(
-      (acc, r) => {
-        acc.PASSED += r.counts.PASSED;
-        acc.FAILED += r.counts.FAILED;
-        acc.BLOCKED += r.counts.BLOCKED;
-        acc.RETEST += r.counts.RETEST;
-        acc.UNTESTED += r.counts.UNTESTED;
-        return acc;
-      },
-      { PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0, UNTESTED: 0 },
-    );
+    const totals = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
+    for (const row of activeGrouped) totals[row.status as keyof typeof totals] = row._count.status;
     const totalResults = Object.values(totals).reduce((sum, n) => sum + n, 0);
     const passRate = totalResults > 0 ? totals.PASSED / totalResults : null;
 

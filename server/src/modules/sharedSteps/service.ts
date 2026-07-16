@@ -19,6 +19,21 @@ export async function setCaseSharedSteps(caseId: string, sharedStepSetIds: strin
   ]);
 }
 
+// Additive — appends one more set after whatever the case already has attached, instead of
+// replacing the whole attachment list. Used by the "promote steps to shared set" action, which
+// must not silently detach any set the case was already using; setCaseSharedSteps's replace-all
+// semantics are correct for CaseForm's own checkbox list (which always submits its full current
+// selection) but were wrong here, since the promote endpoint only ever knows about the ONE newly
+// created set, not the case's pre-existing attachments.
+export async function addCaseSharedStep(caseId: string, sharedStepSetId: string) {
+  const existing = await prisma.testCaseSharedSteps.findMany({
+    where: { caseId },
+    orderBy: { orderIndex: 'asc' },
+    select: { sharedStepSetId: true },
+  });
+  await setCaseSharedSteps(caseId, [...existing.map((e) => e.sharedStepSetId), sharedStepSetId]);
+}
+
 // Resolves each case's own literal `steps` plus every attached SharedStepSet's steps
 // (in attachment order), flattened into one array — used only at run-creation time, where the
 // snapshot must be fully self-contained and immune to later edits to the case or its shared

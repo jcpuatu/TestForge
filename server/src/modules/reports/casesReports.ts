@@ -180,16 +180,27 @@ export async function getStatusTops(projectId: string, query: Record<string, unk
       caseId: { not: null },
       ...(sectionIds.length > 0 ? { case: { sectionId: { in: sectionIds } } } : {}),
     },
-    select: { caseId: true, runId: true, status: true, titleSnapshot: true, priority: true, createdAt: true },
-    orderBy: { createdAt: 'desc' },
+    // updatedAt (bumped by results/routes.ts on every result submission), not createdAt (frozen
+    // at run-creation time) — "latest test result" should track when a result was last entered,
+    // not which run happened to be created most recently.
+    select: { caseId: true, runId: true, status: true, titleSnapshot: true, priority: true, updatedAt: true },
+    orderBy: { updatedAt: 'desc' },
   });
 
   // "Latest test result per test only" — one row per case, keeping only its most recent
-  // RunCase among the selected runs (the query is already ordered desc, so the first hit per
-  // caseId wins). "All test results" instead counts every RunCase row, matching TestRail's own
-  // toggle between the two modes.
+  // RunCase among the selected runs. A real bug lived here: `new Map(pairs)` keeps the LAST
+  // occurrence of a duplicate key, not the first — since `runCases` is already sorted
+  // newest-first, that construction silently kept each case's OLDEST row, exactly backwards
+  // from "latest," and was the report's actual default behavior (latestOnly defaults to true).
+  // Explicit first-write-wins on the pre-sorted array fixes it.
   const rows = latestOnly
-    ? [...new Map(runCases.filter((rc) => rc.caseId).map((rc) => [rc.caseId as string, rc])).values()]
+    ? (() => {
+        const seen = new Map<string, (typeof runCases)[number]>();
+        for (const rc of runCases) {
+          if (rc.caseId && !seen.has(rc.caseId)) seen.set(rc.caseId, rc);
+        }
+        return [...seen.values()];
+      })()
     : runCases;
 
   const filtered = statuses.length > 0 ? rows.filter((r) => statuses.includes(r.status)) : rows;

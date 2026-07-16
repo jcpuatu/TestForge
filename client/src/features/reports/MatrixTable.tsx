@@ -1,4 +1,4 @@
-import { StatusBadge } from '../../components/Badge';
+import { PriorityBadge, StatusBadge } from '../../components/Badge';
 import { DownloadCsvButton } from '../../components/DownloadCsvButton';
 import { downloadTableAsCsv } from '../../lib/downloadCsv';
 import type { ResultStatus } from '../../api/runs';
@@ -6,6 +6,11 @@ import type { ResultStatus } from '../../api/runs';
 interface MatrixRowData {
   caseId: string;
   title: string;
+  // Real snapshot data (RunCase.priority), already fetched and sent by every caller of this
+  // component (resultsReports.ts's ComparisonCase) but never actually rendered here — a
+  // report-design audit flagged this as dead payload; wiring it up answers a natural question
+  // ("are these failures all CRITICAL?") the data already supports.
+  priority?: string;
   cells: { runId: string; status: string | null; defects?: string[] }[];
 }
 
@@ -47,7 +52,7 @@ export function MatrixTable({
           <DownloadCsvButton onClick={handleDownload} />
         </div>
       )}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+      <div className="print-card overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-xs text-slate-500 dark:text-slate-400">
@@ -62,7 +67,12 @@ export function MatrixTable({
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
             {rows.map((row) => (
               <tr key={row.caseId}>
-                <td className="p-2.5 text-slate-700 dark:text-slate-300">{row.title}</td>
+                <td className="p-2.5 text-slate-700 dark:text-slate-300">
+                  <div className="flex items-center gap-2">
+                    {row.priority && <PriorityBadge priority={row.priority} />}
+                    {row.title}
+                  </div>
+                </td>
                 {runs.map((r) => {
                   const cell = row.cells.find((c) => c.runId === r.id);
                   return (
@@ -70,7 +80,9 @@ export function MatrixTable({
                       {cell?.status ? (
                         <StatusBadge status={cell.status as ResultStatus} />
                       ) : (
-                        <span className="text-slate-300 dark:text-slate-600">—</span>
+                        <span className="text-slate-300 dark:text-slate-600" title="Not included in this run">
+                          —
+                        </span>
                       )}
                       {showDefects && cell?.defects && cell.defects.length > 0 && (
                         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{cell.defects.join(', ')}</div>
@@ -83,6 +95,10 @@ export function MatrixTable({
           </tbody>
         </table>
       </div>
+      {/* A blank dash and an UNTESTED badge both read as "muted grey" at a glance, with no
+          on-screen legend explaining the difference (a genuinely different situation: not part
+          of this run at all, vs. part of the run and simply not yet executed). */}
+      <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">— means the case wasn't included in that run at all.</p>
     </div>
   );
 }

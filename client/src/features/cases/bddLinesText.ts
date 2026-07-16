@@ -9,12 +9,15 @@ export function bddLinesToText(lines: BddLine[] | null | undefined): string {
   return lines.map((l) => `${l.keyword} ${l.text}`).join('\n');
 }
 
-export function textToBddLines(text: string): BddLine[] | undefined {
+// Returns [] (not undefined) for empty input — same reasoning as textToSteps in stepsText.ts:
+// this must be submitted as a real "clear the scenario" value, not silently omitted from the
+// request (which would leave the case's existing bddLines untouched instead of clearing them).
+export function textToBddLines(text: string): BddLine[] {
   const lines = text
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
-  if (lines.length === 0) return undefined;
+  if (lines.length === 0) return [];
   return lines.map((line) => {
     const [first, ...rest] = line.split(' ');
     const keyword = KEYWORDS.find((k) => k.toLowerCase() === first.toLowerCase());

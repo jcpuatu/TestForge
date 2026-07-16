@@ -26,7 +26,7 @@ export function StatusTopsReport({ projectId }: { projectId: string }) {
   return (
     <ReportShell
       title="Status Tops"
-      description="Which test cases are used the most, or have the highest failure rates, across a set of test runs."
+      description="Cases grouped by their latest — or every — result status across a set of test runs."
       filters={
         <>
           <label className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
@@ -47,7 +47,7 @@ export function StatusTopsReport({ projectId }: { projectId: string }) {
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
       {data && (
         <>
-          <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+          <div className="print-card mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
               {data.total} test(s) across {data.runs.length} run(s)
             </p>
@@ -65,7 +65,7 @@ export function StatusTopsReport({ projectId }: { projectId: string }) {
               }
             />
           </div>
-          <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <div className="print-card divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
             {data.cases.slice(0, 200).map((c, i) => (
               <div key={`${c.caseId}-${c.runId}-${i}`} className="flex items-center justify-between p-2.5 text-sm">
                 <span className="text-slate-700 dark:text-slate-300">{c.title}</span>

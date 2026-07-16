@@ -28,7 +28,13 @@ meRouter.get(
             projectId: true,
             project: { select: { name: true } },
             startDate: true,
-            plan: { select: { startDate: true } },
+            // plan.milestone nested here too — same reason as runs/routes.ts's GET /:id: a run
+            // created under a plan never copies that plan's milestoneId onto its own milestoneId,
+            // so without this a test whose run only reaches its milestone THROUGH a plan (the
+            // ordinary way to use the hierarchy) always resolved effectiveStartDate() to null and
+            // got bucketed under "Active" instead of "Upcoming," even with a real future
+            // milestone start date one hop away.
+            plan: { select: { startDate: true, milestone: { select: { startDate: true } } } },
             milestone: { select: { startDate: true } },
           },
         },

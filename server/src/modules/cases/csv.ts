@@ -93,7 +93,11 @@ function parseSectionPath(raw: string): string[] {
 }
 
 export function parseCasesCsv(csvText: string): ParsedCaseRow[] {
-  const rows = parseCsv(csvText.trim());
+  // A leading UTF-8 BOM (common from Excel/Notepad saves, and some AI-generated files) isn't
+  // stripped by String.trim() — left in place it silently glues onto the first header cell
+  // ("﻿section"), which then fails to match `col('section')` and dumps every row into a
+  // single fallback "Imported" section instead of respecting the file's actual hierarchy.
+  const rows = parseCsv(csvText.replace(/^﻿/, '').trim());
   if (rows.length === 0) return [];
 
   const header = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, ''));
@@ -112,18 +116,33 @@ export function parseCasesCsv(csvText: string): ParsedCaseRow[] {
     throw new Error('CSV must include a "title" column');
   }
 
-  return rows.slice(1).map((row) => {
+  // The rest of the app validates every case field through createCaseSchema (non-empty title,
+  // length caps) — this importer built its rows directly from raw cell text with none of that,
+  // so a blank title cell (or a short/malformed row whose columns shift, landing `undefined` on
+  // title) silently created a titleless case instead of failing the way the same input would via
+  // the JSON API. Validated once here, at the single choke point every import row passes through.
+  return rows.slice(1).map((row, i) => {
+    const rowNum = i + 2; // 1-indexed, +1 to account for the header row
     const priority = (idx.priority >= 0 ? row[idx.priority] : '').toUpperCase() || 'MEDIUM';
     const type = (idx.type >= 0 ? row[idx.type] : '').toUpperCase() || 'FUNCTIONAL';
+    const title = (row[idx.title] ?? '').trim();
+    if (!title) throw new Error(`Row ${rowNum}: title is required`);
+    if (title.length > 300) throw new Error(`Row ${rowNum}: title must be 300 characters or fewer`);
+    const preconditions = idx.preconditions >= 0 ? row[idx.preconditions] || undefined : undefined;
+    const expectedResult = idx.expectedResult >= 0 ? row[idx.expectedResult] || undefined : undefined;
+    const referenceLink = idx.referenceLink >= 0 ? row[idx.referenceLink] || undefined : undefined;
+    if (preconditions && preconditions.length > 4000) throw new Error(`Row ${rowNum}: preconditions must be 4000 characters or fewer`);
+    if (expectedResult && expectedResult.length > 4000) throw new Error(`Row ${rowNum}: expectedResult must be 4000 characters or fewer`);
+    if (referenceLink && referenceLink.length > 500) throw new Error(`Row ${rowNum}: referenceLink must be 500 characters or fewer`);
     return {
       sectionPath: parseSectionPath(idx.section >= 0 ? row[idx.section] : ''),
-      title: row[idx.title],
+      title,
       priority: VALID_PRIORITIES.has(priority) ? priority : 'MEDIUM',
       type: VALID_TYPES.has(type) ? type : 'FUNCTIONAL',
-      preconditions: idx.preconditions >= 0 ? row[idx.preconditions] || undefined : undefined,
+      preconditions,
       steps: idx.steps >= 0 ? linesToSteps(row[idx.steps]) : undefined,
-      expectedResult: idx.expectedResult >= 0 ? row[idx.expectedResult] || undefined : undefined,
-      referenceLink: idx.referenceLink >= 0 ? row[idx.referenceLink] || undefined : undefined,
+      expectedResult,
+      referenceLink,
     };
   });
 }

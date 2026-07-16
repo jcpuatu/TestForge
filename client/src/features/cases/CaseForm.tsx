@@ -56,7 +56,20 @@ export function CaseForm({
   // TEXT template stores one freeform block of instructions (no per-step rows); STEPS keeps the
   // existing "step | expected result" per-line format. Separate state so switching templates
   // doesn't garble one format into the other.
-  const [textSteps, setTextSteps] = useState(initial?.template !== 'STEPS' ? (initial?.steps?.[0]?.step ?? '') : '');
+  //
+  // Seeded via stepsToText(initial?.steps) — NOT initial?.steps?.[0]?.step — regardless of what
+  // initial?.template says, so opening a multi-step STEPS case and switching the dropdown to
+  // TEXT shows every step (as "step | expected" lines) instead of silently keeping this box
+  // empty. A real, reproduced bug lived here: the old condition only populated this box when the
+  // case *wasn't already* STEPS-templated at mount, so switching STEPS -> TEXT left it empty; if
+  // that empty save went through, `steps` was omitted from the request entirely (Prisma leaves
+  // the column untouched), which visually hid steps 2..N without actually deleting them yet — but
+  // reopening the now-TEXT-labeled case re-seeded this box from a *stale* initial?.steps?.[0]
+  // shortcut, and the very next save (even with zero further edits) wrote that single truncated
+  // entry over the real data, permanently losing it. This is safe for every existing template: a
+  // real TEXT case only ever has one no-`expected` step, so stepsToText reproduces the exact same
+  // string as the old shortcut; a STEPS case now correctly flattens all of its content instead.
+  const [textSteps, setTextSteps] = useState(stepsToText(initial?.steps));
   const [stepsText, setStepsText] = useState(initial?.template === 'STEPS' ? stepsToText(initial?.steps) : '');
   const [expectedResult, setExpectedResult] = useState(initial?.expectedResult ?? '');
   const [mission, setMission] = useState(initial?.mission ?? '');
@@ -105,21 +118,24 @@ export function CaseForm({
     onSubmit({
       title,
       template,
-      preconditions: hasStepFields ? preconditions || undefined : undefined,
-      steps:
-        template === 'STEPS'
-          ? textToSteps(stepsText)
-          : template === 'TEXT' && textSteps
-            ? [{ step: textSteps }]
-            : undefined,
-      expectedResult: hasStepFields ? expectedResult || undefined : undefined,
-      mission: template === 'EXPLORATORY' ? mission || undefined : undefined,
-      goals: template === 'EXPLORATORY' ? goals || undefined : undefined,
+      // These fields send whatever's literally in the box, including "" — NOT `x || undefined`.
+      // apiFetch's JSON.stringify drops undefined-valued keys entirely, which the server (and
+      // Prisma) treats as "field not provided, leave the column alone." `x || undefined` meant a
+      // tester who deleted this field's content and saved got a silent no-op: no error, but the
+      // old value stayed in the database untouched. An empty string is a real, intentional value
+      // here (this app already treats "" and null as equivalent everywhere these fields are
+      // read), so it's safe to always send it. Only the template-applicability gating (undefined
+      // when this field doesn't apply to the current template at all) is intentional and kept.
+      preconditions: hasStepFields ? preconditions : undefined,
+      steps: template === 'STEPS' ? textToSteps(stepsText) : template === 'TEXT' ? (textSteps ? [{ step: textSteps }] : []) : undefined,
+      expectedResult: hasStepFields ? expectedResult : undefined,
+      mission: template === 'EXPLORATORY' ? mission : undefined,
+      goals: template === 'EXPLORATORY' ? goals : undefined,
       bddLines: template === 'BDD' ? textToBddLines(bddText) : undefined,
       priority,
       type,
-      estimate: estimate || undefined,
-      referenceLink: referenceLink || undefined,
+      estimate,
+      referenceLink,
       labelIds,
       sharedStepSetIds,
     });

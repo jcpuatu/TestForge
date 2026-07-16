@@ -10,8 +10,14 @@ import { StackedStatusBar } from '../../components/StackedStatusBar';
 import { PropertyDistributionChart } from '../../components/PropertyDistributionChart';
 import { Select } from '../../components/Input';
 
+// A run's own date wins; else its plan's own date; else the date the plan itself inherits from
+// ITS milestone (a run created under a plan never copies that plan's milestoneId onto the run's
+// own milestoneId — see runs/service.ts — so `run.milestone` is only ever populated for a run
+// tied DIRECTLY to a milestone, not one reached through a plan, which is the ordinary path).
+// Checking run.plan?.milestone?.startDate before falling back to run.milestone?.startDate is
+// what makes this a real 3-level chain instead of silently stopping after 2 hops.
 function effectiveStartDate(run: MyTest['run']): string | null {
-  return run.startDate ?? run.plan?.startDate ?? run.milestone?.startDate ?? null;
+  return run.startDate ?? run.plan?.startDate ?? run.plan?.milestone?.startDate ?? run.milestone?.startDate ?? null;
 }
 
 function isUpcoming(run: MyTest['run']): boolean {

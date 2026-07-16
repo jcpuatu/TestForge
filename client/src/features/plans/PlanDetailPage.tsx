@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Trash2 } from 'lucide-react';
@@ -56,6 +56,19 @@ export function PlanDetailPage() {
   const configGroups = configGroupsQuery.data?.configGroups ?? [];
   const directoryQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
 
+  // Reconciles the checked selection against whatever config values actually still exist —
+  // without this, deleting a config value via "Manage configurations" (opened in a Modal on top
+  // of this still-mounted form) left its id sitting in `configIds` with no visible checkbox for
+  // it, silently corrupting both the "Create N runs" button count and the actual submit, which
+  // would 404 on the now-deleted id. Runs whenever the config-groups query settles, including its
+  // own refetch after a delete in the manager (same query key, invalidated from there).
+  useEffect(() => {
+    const groups = configGroupsQuery.data?.configGroups;
+    if (!groups) return;
+    const validIds = new Set(groups.flatMap((g) => g.configs.map((c) => c.id)));
+    setConfigIds((prev) => prev.filter((id) => validIds.has(id)));
+  }, [configGroupsQuery.data]);
+
   function toggleConfig(id: string) {
     setConfigIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   }
@@ -63,11 +76,11 @@ export function PlanDetailPage() {
   const addRun = useMutation({
     mutationFn: () =>
       configIds.length > 0
-        ? configApi
-            .createPlanRunsByConfig(planId!, { name, suiteId, configIds, assignedToId: runAssigneeId || undefined })
-            .then((res) => res.runs)
-        : plansApi.createPlanRun(planId!, { name, suiteId, assignedToId: runAssigneeId || undefined }).then((res) => [res.run]),
-    onSuccess: () => {
+        ? configApi.createPlanRunsByConfig(planId!, { name, suiteId, configIds, assignedToId: runAssigneeId || undefined })
+        : plansApi
+            .createPlanRun(planId!, { name, suiteId, assignedToId: runAssigneeId || undefined })
+            .then((res) => ({ runs: [res.run], failed: [] as { configId: string; configName: string; message: string }[] })),
+    onSuccess: (res) => {
       setName('');
       setSuiteId('');
       setConfigIds([]);
@@ -75,6 +88,18 @@ export function PlanDetailPage() {
       setShowForm(false);
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['plans', planId] });
+      // Same class of bug as the run-execution mutations: creating a run changes what a
+      // Plan/Project/Milestone Summary report should show, but report queries have their own
+      // independent key namespace and were never invalidated by anything on this page.
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      // createPlanRunsByConfig creates each config's run independently — a failure on one
+      // shouldn't hide that the others actually succeeded, but it also can't be silent.
+      if (res.failed.length > 0) {
+        showToast(
+          `Created ${res.runs.length} run(s) — failed for ${res.failed.length}: ${res.failed.map((f) => f.configName).join(', ')}`,
+          'error',
+        );
+      }
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : 'Failed to add run'),
   });
@@ -118,11 +143,11 @@ export function PlanDetailPage() {
     onSuccess: (res) => {
       setShowRerun(false);
       queryClient.invalidateQueries({ queryKey: ['plans', planId] });
-      showToast(
-        res.skipped > 0
-          ? `Created ${res.runs.length} rerun(s) — skipped ${res.skipped} run(s) with no matching tests.`
-          : `Created ${res.runs.length} rerun(s).`,
-      );
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      const parts = [`Created ${res.runs.length} rerun(s)`];
+      if (res.skipped > 0) parts.push(`skipped ${res.skipped} with no matching tests`);
+      if (res.failed.length > 0) parts.push(`failed for ${res.failed.length}: ${res.failed.map((f) => f.runName).join(', ')}`);
+      showToast(parts.join(' — ') + '.', res.failed.length > 0 ? 'error' : undefined);
     },
     onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to rerun plan', 'error'),
   });

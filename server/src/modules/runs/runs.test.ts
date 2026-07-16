@@ -194,4 +194,21 @@ describe('runs and results', () => {
     expect(closed.status).toBe(200);
     expect(closed.body.run.isCompleted).toBe(true);
   });
+
+  // Regression test: creating a run with a milestoneId from a different project previously
+  // succeeded with zero check, silently leaking a foreign project's milestone into this run.
+  it('rejects a milestoneId that belongs to a different project', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    const otherProject = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Other Run Project ${Date.now()}` });
+    const foreignMilestone = await request(app)
+      .post(`/api/v1/projects/${otherProject.body.project.id}/milestones`)
+      .set(auth(adminToken))
+      .send({ name: 'Foreign Milestone' });
+
+    const run = await request(app)
+      .post(`/api/v1/projects/${projectId}/runs`)
+      .set(auth(adminToken))
+      .send({ name: 'Run With Foreign Milestone', suiteId, milestoneId: foreignMilestone.body.milestone.id });
+    expect(run.status).toBe(404);
+  });
 });

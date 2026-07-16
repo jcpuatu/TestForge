@@ -15,11 +15,17 @@ export function StackedStatusBar({
   total,
   height = 10,
   onSegmentClick,
+  labels,
 }: {
   counts: Record<ResultStatus, number>;
   total: number;
   height?: number;
   onSegmentClick?: (status: ResultStatus) => void;
+  // Optional per-status label override for the hover tooltip — a few reports (e.g. Coverage for
+  // References) reuse this component purely for its color-proportion bar with statuses standing
+  // in for an unrelated concept (e.g. PASSED = "has a reference"), and without this the tooltip
+  // read as a literal, wrong "PASSED: 2" on hover with no connection to what the bar means.
+  labels?: Partial<Record<ResultStatus, string>>;
 }) {
   if (total === 0) {
     return <div className="rounded-full bg-slate-100 dark:bg-slate-700" style={{ height }} />;
@@ -35,7 +41,7 @@ export function StackedStatusBar({
             width: `${(counts[seg.status] / total) * 100}%`,
             marginRight: i < visible.length - 1 ? 2 : 0,
           }}
-          title={`${seg.status}: ${counts[seg.status]}`}
+          title={`${labels?.[seg.status] ?? seg.status}: ${counts[seg.status]}`}
           onClick={onSegmentClick ? () => onSegmentClick(seg.status) : undefined}
           role={onSegmentClick ? 'button' : undefined}
         />

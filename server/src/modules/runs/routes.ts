@@ -5,7 +5,8 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createRunSchema, rerunSchema, updateRunSchema } from './schema';
-import { createRun, createRunsForConfigs, getRunSummary, rerunRun } from './service';
+import { assertRunIsOpen, createRun, createRunsForConfigs, getRunSummary, rerunRun } from './service';
+import { assertUserExists } from '../../lib/assertions';
 import { toPublicRunCase } from './serialize';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
@@ -72,8 +73,8 @@ runsByPlanRouter.post(
       throw new BadRequestError('configIds must be a non-empty array');
     }
     const body = createRunSchema.omit({ configLabel: true }).parse({ ...rest, planId: plan.id });
-    const runs = await createRunsForConfigs(plan.projectId, body, configIds, req.user!.id);
-    res.status(201).json({ runs });
+    const { runs, failed } = await createRunsForConfigs(plan.projectId, body, configIds, req.user!.id);
+    res.status(201).json({ runs, failed });
   }),
 );
 
@@ -88,7 +89,22 @@ runsRouter.get(
       where: { id: req.params.id },
       include: {
         suite: true,
-        plan: { select: { id: true, name: true, startDate: true, endDate: true } },
+        // plan.milestone is nested here (not just the run's own direct milestone below) because
+        // a run created under a plan never has that plan's milestoneId copied onto its own
+        // milestoneId field (see runs/service.ts) — without this, the date-inheritance chain
+        // silently broke at the second hop: a Plan showed "Inherits milestone due date" for its
+        // own missing dates just fine, but a Run under that same Plan had no way to see the
+        // milestone's date at all, so it fell straight through to "No dates set" even though the
+        // exact same milestone was one click away on the Plan.
+        plan: {
+          select: {
+            id: true,
+            name: true,
+            startDate: true,
+            endDate: true,
+            milestone: { select: { id: true, name: true, startDate: true, dueDate: true } },
+          },
+        },
         milestone: { select: { id: true, name: true, startDate: true, dueDate: true } },
       },
     });
@@ -107,6 +123,10 @@ runsRouter.patch(
     if (existing.isCompleted && (body.startDate !== undefined || body.endDate !== undefined)) {
       throw new BadRequestError('Cannot change dates on a completed run');
     }
+    if (existing.isCompleted && assignedToId !== undefined) {
+      throw new BadRequestError('Cannot reassign tests on a completed run');
+    }
+    if (assignedToId) await assertUserExists(assignedToId);
     const data: Record<string, unknown> = { ...body };
     if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
     if (body.endDate !== undefined) data.endDate = body.endDate ? new Date(body.endDate) : null;
@@ -172,7 +192,36 @@ runsRouter.post(
       where: { id: req.params.id },
       data: { isCompleted: false, completedAt: null },
     });
+    // Reopen is this app's own documented, deliberate deviation from real TestRail's "closed is
+    // permanent" behavior — exactly the kind of easily-second-guessed action the Activity log
+    // exists for (per ActivityTab.tsx's own framing), yet it previously left no trace at all.
+    await logAudit({
+      projectId: run.projectId,
+      actorId: req.user!.id,
+      action: 'RUN_REOPENED',
+      entityType: 'TestRun',
+      entityId: run.id,
+      summary: `Reopened run "${run.name}"`,
+    });
     res.json({ run });
+  }),
+);
+
+// No client code calls DELETE /runs/:id today (Reopen/Rerun are the UI's own paths back from a
+// closed run) — this is a documented, dual-auth REST API surface with real destructive blast
+// radius and, unlike every other similarly-destructive route in this codebase, had neither an
+// audit trail nor a paired impact preview. Added for parity, not because a UI regression
+// depends on it.
+runsRouter.get(
+  '/:id/delete-impact',
+  asyncHandler(async (req, res) => {
+    const run = await prisma.testRun.findUnique({ where: { id: req.params.id } });
+    if (!run) throw new NotFoundError('Run');
+    const [testCount, resultCount] = await Promise.all([
+      prisma.runCase.count({ where: { runId: run.id } }),
+      prisma.result.count({ where: { runCase: { runId: run.id } } }),
+    ]);
+    res.json({ testCount, resultCount });
   }),
 );
 
@@ -180,7 +229,17 @@ runsRouter.delete(
   '/:id',
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
+    const run = await prisma.testRun.findUnique({ where: { id: req.params.id } });
+    if (!run) throw new NotFoundError('Run');
     await prisma.testRun.delete({ where: { id: req.params.id } });
+    await logAudit({
+      projectId: run.projectId,
+      actorId: req.user!.id,
+      action: 'RUN_DELETED',
+      entityType: 'TestRun',
+      entityId: run.id,
+      summary: `Permanently deleted run "${run.name}"`,
+    });
     res.status(204).send();
   }),
 );
@@ -205,6 +264,8 @@ runsRouter.post(
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
     const body = bulkAssignSchema.parse(req.body);
+    await assertRunIsOpen(req.params.id);
+    if (body.assignedToId) await assertUserExists(body.assignedToId);
     const result = await prisma.runCase.updateMany({
       where: { id: { in: body.testIds }, runId: req.params.id },
       data: { assignedToId: body.assignedToId },
@@ -218,6 +279,7 @@ runsRouter.post(
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
     const body = bulkResultSchema.parse(req.body);
+    await assertRunIsOpen(req.params.id);
     // Scope to this run first so a testId from a different run can't be targeted, then create
     // one Result per matched test (createMany — one batched insert, not a loop) and flip every
     // matched RunCase's denormalized status in a single updateMany, matching the same

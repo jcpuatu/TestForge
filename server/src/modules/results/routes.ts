@@ -5,6 +5,8 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
 import { toPublicRunCase } from '../runs/serialize';
+import { assertRunIsOpen } from '../runs/service';
+import { assertUserExists } from '../../lib/assertions';
 import { createResultSchema, reassignSchema } from './schema';
 
 const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
@@ -30,6 +32,10 @@ testsRouter.patch(
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
     const body = reassignSchema.parse(req.body);
+    const existing = await prisma.runCase.findUnique({ where: { id: req.params.id }, select: { runId: true } });
+    if (!existing) throw new NotFoundError('Test');
+    await assertRunIsOpen(existing.runId);
+    if (body.assignedToId) await assertUserExists(body.assignedToId);
     const runCase = await prisma.runCase.update({ where: { id: req.params.id }, data: body });
     res.json({ test: toPublicRunCase(runCase) });
   }),
@@ -58,6 +64,7 @@ testsRouter.post(
     const { stepResults, ...body } = createResultSchema.parse(req.body);
     const runCase = await prisma.runCase.findUnique({ where: { id: req.params.id } });
     if (!runCase) throw new NotFoundError('Test');
+    await assertRunIsOpen(runCase.runId);
 
     const [result] = await prisma.$transaction([
       prisma.result.create({

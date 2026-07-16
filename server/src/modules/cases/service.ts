@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma-client';
+import { BadRequestError } from '../../lib/errors';
 
 // Replace-all semantics: pass the full desired label set, not a delta. Called from both
 // case create and case update — `labelIds: undefined` means "don't touch labels" (the caller
@@ -13,12 +14,28 @@ export async function setCaseLabels(caseId: string, labelIds: string[]) {
   ]);
 }
 
+// Same reasoning as sections/service.ts's nextSectionOrderIndex — createCaseSchema exposes no
+// orderIndex field and no create route ever computed one, so every fresh case silently defaulted
+// to the schema's orderIndex 0. MAX+1 (not a sibling COUNT) so this stays correct after
+// deletions have left gaps.
+export async function nextCaseOrderIndex(sectionId: string): Promise<number> {
+  const result = await prisma.testCase.aggregate({ where: { sectionId }, _max: { orderIndex: true } });
+  return (result._max.orderIndex ?? -1) + 1;
+}
+
 const SORTABLE_FIELDS = ['title', 'priority', 'type', 'createdAt', 'orderIndex'] as const;
 type SortableField = (typeof SORTABLE_FIELDS)[number];
 
 function splitCsv(value: unknown): string[] {
   if (typeof value !== 'string' || value.length === 0) return [];
   return value.split(',').filter(Boolean);
+}
+
+function parseDateFilterParam(value: unknown, paramName: string): Date | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new BadRequestError(`${paramName} is not a valid date`);
+  return date;
 }
 
 export function buildCaseSort(query: Record<string, unknown>): Prisma.TestCaseOrderByWithRelationInput {
@@ -44,8 +61,12 @@ export function buildCaseListQuery(
   const types = splitCsv(query.types);
   const createdByIds = splitCsv(query.createdByIds);
   const labelIds = splitCsv(query.labelIds);
-  const createdAfter = typeof query.createdAfter === 'string' ? new Date(query.createdAfter) : null;
-  const createdBefore = typeof query.createdBefore === 'string' ? new Date(query.createdBefore) : null;
+  // An invalid date string (typo'd query param, malformed client code) previously flowed
+  // straight into Prisma's where clause as a JS `Invalid Date` object — Prisma's serialization of
+  // that throws, and the throw isn't an AppError/ZodError, so it surfaced as a raw 500 instead of
+  // a clear validation error.
+  const createdAfter = parseDateFilterParam(query.createdAfter, 'createdAfter');
+  const createdBefore = parseDateFilterParam(query.createdBefore, 'createdBefore');
   const matchAny = query.match === 'any';
 
   const categoryClauses: Prisma.TestCaseWhereInput[] = [];

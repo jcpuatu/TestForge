@@ -46,5 +46,8 @@ export function createPlanRunsByConfig(
   planId: string,
   input: { name: string; suiteId: string; caseIds?: string[]; configIds: string[]; assignedToId?: string },
 ) {
-  return apiFetch<{ runs: TestRun[] }>(`/plans/${planId}/runs/by-config`, { method: 'POST', body: input });
+  return apiFetch<{ runs: TestRun[]; failed: { configId: string; configName: string; message: string }[] }>(
+    `/plans/${planId}/runs/by-config`,
+    { method: 'POST', body: input },
+  );
 }

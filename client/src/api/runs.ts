@@ -14,7 +14,15 @@ export interface TestRun {
   completedAt: string | null;
   createdAt: string;
   suite?: { name: string } | null;
-  plan?: { id: string; name: string; startDate: string | null; endDate: string | null } | null;
+  plan?:
+    | {
+        id: string;
+        name: string;
+        startDate: string | null;
+        endDate: string | null;
+        milestone?: { id: string; name: string; startDate: string | null; dueDate: string | null } | null;
+      }
+    | null;
   milestone?: { id: string; name: string; startDate: string | null; dueDate: string | null } | null;
   _count?: { runCases: number };
   // Present on the list endpoint only (GET /projects/:id/runs) — a per-run status breakdown so

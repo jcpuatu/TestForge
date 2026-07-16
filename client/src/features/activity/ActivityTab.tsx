@@ -8,10 +8,13 @@ const ACTION_LABELS: Record<string, string> = {
   SECTION_DELETED: 'Section deleted',
   SUITE_DELETED: 'Suite deleted',
   CASE_DELETED: 'Case deleted',
+  CASE_PERMANENTLY_DELETED: 'Case permanently deleted',
   MILESTONE_DATES_CHANGED: 'Milestone dates changed',
   PLAN_DATES_CHANGED: 'Plan dates changed',
   RUN_DATES_CHANGED: 'Run dates changed',
   RUN_CLOSED: 'Run closed',
+  RUN_REOPENED: 'Run reopened',
+  RUN_DELETED: 'Run permanently deleted',
 };
 
 export function ActivityTab() {

@@ -738,7 +738,12 @@ export function SuiteDetailPage() {
                       </div>
                     ) : (
                       expandedCaseId === testCase.id && (
-                        <div className="mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-400">
+                        // Note: only whichever case is currently expanded contributes detail
+                        // content to a printed report — this page renders one case's detail at
+                        // a time by design (click-to-expand), so Outline vs. Details correctly
+                        // hides/shows this block, but Details mode can't retroactively expand
+                        // every other case in the list too. Expand what you want included first.
+                        <div className="print-detail-only mt-2 space-y-2 text-sm text-slate-600 dark:text-slate-400">
                           {testCase.template === 'BDD' ? (
                             testCase.bddLines &&
                             testCase.bddLines.length > 0 && (

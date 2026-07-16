@@ -45,13 +45,17 @@ usersRouter.post(
   requireRole('ADMIN'),
   asyncHandler(async (req, res) => {
     const body = createUserSchema.parse(req.body);
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    // Normalized to lowercase before every lookup/write, same pattern this codebase already
+    // uses for Label names — SQLite's default collation is case-sensitive, so without this
+    // "Test@x.com" and "test@x.com" were two different, both-loginable accounts.
+    const email = body.email.toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new BadRequestError('A user with that email already exists');
     }
     const passwordHash = await hashPassword(body.password);
     const user = await prisma.user.create({
-      data: { email: body.email, name: body.name, role: body.role, passwordHash },
+      data: { email, name: body.name, role: body.role, passwordHash },
     });
     res.status(201).json({ user: toPublicUser(user) });
   }),
@@ -145,7 +149,16 @@ usersRouter.delete(
     if (req.user!.role !== 'ADMIN' && req.user!.id !== req.params.id) {
       throw new ForbiddenError();
     }
-    await prisma.apiKey.update({ where: { id: req.params.keyId }, data: { revokedAt: new Date() } });
+    // Scoped by userId too, not just id — without this, any caller who can reach this route for
+    // their OWN :id (i.e. anyone) could revoke a DIFFERENT user's key by passing that key's id as
+    // :keyId, since the ownership check above only verifies the caller owns :id, never that
+    // :keyId actually belongs to it. updateMany + a 0-count check makes "not found" and
+    // "not yours" indistinguishable to the caller, which is the correct behavior here.
+    const { count } = await prisma.apiKey.updateMany({
+      where: { id: req.params.keyId, userId: req.params.id },
+      data: { revokedAt: new Date() },
+    });
+    if (count === 0) throw new NotFoundError('API key');
     res.status(204).send();
   }),
 );

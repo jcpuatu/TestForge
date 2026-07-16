@@ -27,6 +27,7 @@ export async function collectSectionSubtree(rootId: string): Promise<string[]> {
 // from stale index math instead of a fresh re-sort each time.
 export async function moveSection(sectionId: string, newParentId: string | null, targetIndex: number) {
   const section = await prisma.section.findUniqueOrThrow({ where: { id: sectionId } });
+  const originalParentId = section.parentId;
 
   if (newParentId) {
     if (newParentId === sectionId) throw new Error('A section cannot be moved into itself');
@@ -42,12 +43,38 @@ export async function moveSection(sectionId: string, newParentId: string | null,
   const reordered = [...siblings];
   reordered.splice(Math.min(targetIndex, reordered.length), 0, section);
 
-  await prisma.$transaction(
-    reordered.map((s, index) =>
-      prisma.section.update({
-        where: { id: s.id },
-        data: { orderIndex: index, ...(s.id === sectionId ? { parentId: newParentId } : {}) },
-      }),
-    ),
+  const updates = reordered.map((s, index) =>
+    prisma.section.update({
+      where: { id: s.id },
+      data: { orderIndex: index, ...(s.id === sectionId ? { parentId: newParentId } : {}) },
+    }),
   );
+
+  // A reparent (as opposed to a same-parent reorder) leaves a gap in the ORIGIN parent's
+  // remaining children where the moved section used to sit — e.g. [0,1,2,3,4] minus index 2
+  // becomes [0,1,_,3,4], never renormalized back down to [0,1,2,3]. Left alone, repeated
+  // reparents compound into arbitrarily large gaps at the origin. Re-sort and renumber those
+  // remaining siblings too, in the same transaction, whenever a move actually changes parents.
+  if (originalParentId !== newParentId) {
+    const originSiblings = await prisma.section.findMany({
+      where: { suiteId: section.suiteId, parentId: originalParentId, id: { not: sectionId } },
+      orderBy: { orderIndex: 'asc' },
+    });
+    updates.push(
+      ...originSiblings.map((s, index) => prisma.section.update({ where: { id: s.id }, data: { orderIndex: index } })),
+    );
+  }
+
+  await prisma.$transaction(updates);
+}
+
+// New siblings must not all collide at the schema default of 0 — a real, reproduced bug: neither
+// createSectionSchema nor its route ever computed a real orderIndex, so every fresh sibling
+// silently fell back to the Prisma schema default of 0. "Creation order" only ever looked
+// correct because of SQLite's incidental (not guaranteed) tie-break behavior on ties, not
+// because it was actually being set. MAX+1 (not a sibling COUNT) so this stays correct even
+// after deletions have left gaps in the existing sequence.
+export async function nextSectionOrderIndex(suiteId: string, parentId: string | null): Promise<number> {
+  const result = await prisma.section.aggregate({ where: { suiteId, parentId }, _max: { orderIndex: true } });
+  return (result._max.orderIndex ?? -1) + 1;
 }

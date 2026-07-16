@@ -6,7 +6,7 @@ import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
 import { BadRequestError } from '../../lib/errors';
 import { createSectionSchema, moveSectionSchema, updateSectionSchema } from './schema';
-import { collectSectionSubtree, moveSection } from './service';
+import { collectSectionSubtree, moveSection, nextSectionOrderIndex } from './service';
 import { logAudit } from '../../lib/audit';
 
 // Mounted at /api/v1/suites/:suiteId/sections
@@ -29,7 +29,8 @@ sectionsNestedRouter.post(
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
     const body = createSectionSchema.parse(req.body);
-    const section = await prisma.section.create({ data: { ...body, suiteId: req.params.suiteId } });
+    const orderIndex = await nextSectionOrderIndex(req.params.suiteId, body.parentId ?? null);
+    const section = await prisma.section.create({ data: { ...body, suiteId: req.params.suiteId, orderIndex } });
     res.status(201).json({ section });
   }),
 );

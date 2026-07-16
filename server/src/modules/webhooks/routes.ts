@@ -5,7 +5,8 @@ import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { NotFoundError } from '../../lib/errors';
-import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
+import { deliverTestPing } from '../../lib/webhook-dispatcher';
+import { assertPublicHttpUrl } from '../../lib/urlSafety';
 import { createWebhookSchema, updateWebhookSchema } from './schema';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
@@ -33,6 +34,7 @@ webhooksNestedRouter.post(
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
     const body = createWebhookSchema.parse(req.body);
+    await assertPublicHttpUrl(body.url);
     const secret = crypto.randomBytes(24).toString('hex');
     const webhook = await prisma.webhook.create({
       data: { projectId: req.params.projectId, url: body.url, event: body.event, secret },
@@ -51,6 +53,7 @@ webhooksRouter.patch(
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
     const body = updateWebhookSchema.parse(req.body);
+    if (body.url) await assertPublicHttpUrl(body.url);
     const webhook = await prisma.webhook.update({ where: { id: req.params.id }, data: body });
     res.json({ webhook: toPublicWebhook(webhook) });
   }),
@@ -71,7 +74,7 @@ webhooksRouter.post(
   asyncHandler(async (req, res) => {
     const webhook = await prisma.webhook.findUnique({ where: { id: req.params.id } });
     if (!webhook) throw new NotFoundError('Webhook');
-    await dispatchWebhookEvent(webhook.projectId!, webhook.event as 'RUN_COMPLETED', { ping: true, triggeredBy: req.user!.id });
+    await deliverTestPing(webhook, req.user!.id);
     res.status(202).json({ status: 'dispatched' });
   }),
 );

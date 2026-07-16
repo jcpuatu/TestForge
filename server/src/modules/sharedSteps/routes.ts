@@ -5,7 +5,7 @@ import { requireRole } from '../../middleware/requireRole';
 import { prisma } from '../../config/prisma-client';
 import { BadRequestError, NotFoundError } from '../../lib/errors';
 import { createSharedStepSetSchema, promoteSharedStepsSchema, updateSharedStepSetSchema } from './schema';
-import { setCaseSharedSteps } from './service';
+import { addCaseSharedStep } from './service';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
@@ -115,7 +115,7 @@ promoteSharedStepsRouter.post(
       prisma.sharedStepSet.create({ data: { projectId: suite.projectId, name: body.name, steps: testCase.steps! } }),
       prisma.testCase.update({ where: { id: testCase.id }, data: { steps: null } }),
     ]);
-    await setCaseSharedSteps(testCase.id, [set.id]);
+    await addCaseSharedStep(testCase.id, set.id);
 
     res.status(201).json({ sharedStepSet: toPublicSet(set) });
   }),

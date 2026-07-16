@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import fs from 'fs';
+import crypto from 'crypto';
 import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { requireRole } from '../../middleware/requireRole';
@@ -45,11 +46,17 @@ caseAttachmentsRouter.post(
     if (!testCase) throw new NotFoundError('Test case');
     if (!req.file) throw new BadRequestError('No file uploaded (expected multipart field "file")');
 
-    const created = await prisma.attachment.create({
-      data: { filename: req.file.originalname, mimeType: req.file.mimetype, size: req.file.size, storagePath: '', caseId: testCase.id, uploadedById: req.user!.id },
+    // Write the file to disk BEFORE creating the DB row, not after — the reverse order (create
+    // row with a placeholder storagePath, then save, then update) left a permanent phantom
+    // Attachment row (storagePath: '') whenever the disk write failed, e.g. an over-long
+    // filename on Windows. A row genuinely referencing a file that exists is the only state this
+    // table should ever contain; an orphaned file with no DB row on the rare reverse failure is a
+    // harmless leftover, not a listing/download bug.
+    const id = crypto.randomUUID();
+    const storagePath = saveFile(id, req.file.originalname, req.file.buffer);
+    const attachment = await prisma.attachment.create({
+      data: { id, filename: req.file.originalname, mimeType: req.file.mimetype, size: req.file.size, storagePath, caseId: testCase.id, uploadedById: req.user!.id },
     });
-    const storagePath = saveFile(created.id, req.file.originalname, req.file.buffer);
-    const attachment = await prisma.attachment.update({ where: { id: created.id }, data: { storagePath } });
     res.status(201).json({ attachment: toPublicAttachment(attachment) });
   }),
 );
@@ -79,11 +86,12 @@ resultAttachmentsRouter.post(
     if (!result) throw new NotFoundError('Result');
     if (!req.file) throw new BadRequestError('No file uploaded (expected multipart field "file")');
 
-    const created = await prisma.attachment.create({
-      data: { filename: req.file.originalname, mimeType: req.file.mimetype, size: req.file.size, storagePath: '', resultId: result.id, uploadedById: req.user!.id },
+    // Same save-before-create ordering as caseAttachmentsRouter above, and for the same reason.
+    const id = crypto.randomUUID();
+    const storagePath = saveFile(id, req.file.originalname, req.file.buffer);
+    const attachment = await prisma.attachment.create({
+      data: { id, filename: req.file.originalname, mimeType: req.file.mimetype, size: req.file.size, storagePath, resultId: result.id, uploadedById: req.user!.id },
     });
-    const storagePath = saveFile(created.id, req.file.originalname, req.file.buffer);
-    const attachment = await prisma.attachment.update({ where: { id: created.id }, data: { storagePath } });
     res.status(201).json({ attachment: toPublicAttachment(attachment) });
   }),
 );

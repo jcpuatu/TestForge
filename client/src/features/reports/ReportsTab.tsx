@@ -38,7 +38,7 @@ export function ReportsTab() {
         <StatTile label="Test cases" value={String(data.counts.cases)} />
         <StatTile label="Test runs" value={String(data.counts.runs)} />
         <StatTile label="Milestones" value={String(data.counts.milestones)} />
-        <StatTile label="Pass rate (recent)" value={passRateLabel} />
+        <StatTile label="Pass rate (active runs)" value={passRateLabel} />
       </div>
 
       <div className="mb-3 flex items-center justify-between">

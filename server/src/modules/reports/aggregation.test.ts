@@ -29,6 +29,13 @@ describe('parseReferences', () => {
   it('filters out empty segments from trailing/double commas', () => {
     expect(parseReferences('TRM-1,,TRM-2,')).toEqual(['TRM-1', 'TRM-2']);
   });
+
+  // Regression test: a copy/paste slip like "BUG-100, BUG-100" previously double-counted a
+  // single mention as two in every report built on this shared parser (defect aggregation,
+  // reference coverage). Order-preserving, first occurrence kept.
+  it('dedupes exact-duplicate entries', () => {
+    expect(parseReferences('BUG-100, BUG-100, BUG-101')).toEqual(['BUG-100', 'BUG-101']);
+  });
 });
 
 describe('bucketByPeriod', () => {
@@ -58,6 +65,18 @@ describe('fillPeriodGaps', () => {
       { period: '2026-07-02', count: 0 },
       { period: '2026-07-03', count: 0 },
     ]);
+  });
+
+  // Regression test: Date.setUTCMonth doesn't clamp an out-of-range day-of-month on overflow —
+  // a cursor starting on the 31st previously skipped February outright (Jan 31 + 1 month lands
+  // on Mar 3), not just missing its zero-placeholder but silently dropping any real activity
+  // that period bucket would have carried. Only reachable via the "custom" date-range preset,
+  // which is exactly what a user picking their own start date can trigger.
+  it('does not skip a month when the cursor starts on the 29th-31st', () => {
+    const buckets = [{ period: '2026-06', count: 5 }];
+    const filled = fillPeriodGaps(buckets, new Date('2026-05-31T00:00:00Z'), new Date('2026-08-01T00:00:00Z'), 'month');
+    expect(filled.map((b) => b.period)).toEqual(['2026-05', '2026-06', '2026-07', '2026-08']);
+    expect(filled.find((b) => b.period === '2026-06')?.count).toBe(5);
   });
 });
 

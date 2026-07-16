@@ -15,10 +15,12 @@ import {
 import { CASE_LABELS_INCLUDE, CASE_SHARED_STEPS_INCLUDE, serializeSteps, toPublicCase } from './serialize';
 import { buildSectionPathMap, casesToCsv, parseCasesCsv, resolveExportColumns } from './csv';
 import { casesToFeatureFile, parseFeatureFile } from './gherkin';
-import { buildCaseListQuery, buildCaseSort, setCaseLabels } from './service';
+import { buildCaseListQuery, buildCaseSort, nextCaseOrderIndex, setCaseLabels } from './service';
+import { nextSectionOrderIndex } from '../sections/service';
 import { setCaseSharedSteps } from '../sharedSteps/service';
 import { BadRequestError } from '../../lib/errors';
 import { logAudit } from '../../lib/audit';
+import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 
 const CASE_INCLUDE = { ...CASE_LABELS_INCLUDE, ...CASE_SHARED_STEPS_INCLUDE };
 
@@ -96,6 +98,32 @@ casesBySuiteRouter.post(
     const sectionByKey = new Map(
       existingSections.map((s) => [`${s.parentId ?? 'root'}::${s.name.toLowerCase()}`, s]),
     );
+    // Lazily-initialized per-parent counters (keyed the same way as sectionByKey) so a batch of
+    // sibling sections auto-created across many CSV rows gets real, sequential orderIndex values
+    // instead of everything colliding at the schema default of 0 — one initial MAX query per
+    // parent actually touched, then incremented in memory for the rest of the import.
+    const sectionOrderCounters = new Map<string, number>();
+    async function nextSiblingSectionOrder(suiteId: string, parentId: string | null): Promise<number> {
+      const key = parentId ?? 'root';
+      if (!sectionOrderCounters.has(key)) {
+        sectionOrderCounters.set(key, await nextSectionOrderIndex(suiteId, parentId));
+      }
+      const next = sectionOrderCounters.get(key)!;
+      sectionOrderCounters.set(key, next + 1);
+      return next;
+    }
+    // Same lazy-counter shape, scoped per section instead of per section-parent — a section that
+    // receives many rows across this same import must not have every one of its new cases
+    // collide at orderIndex 0 either.
+    const caseOrderCounters = new Map<string, number>();
+    async function nextSiblingCaseOrder(sectionId: string): Promise<number> {
+      if (!caseOrderCounters.has(sectionId)) {
+        caseOrderCounters.set(sectionId, await nextCaseOrderIndex(sectionId));
+      }
+      const next = caseOrderCounters.get(sectionId)!;
+      caseOrderCounters.set(sectionId, next + 1);
+      return next;
+    }
 
     // Walks a Sections Hierarchy path (`Parent > Child > Grandchild`) level by level, creating
     // any section that doesn't already exist under its resolved parent — matching-by-name is
@@ -108,7 +136,8 @@ casesBySuiteRouter.post(
         const key = `${parentId ?? 'root'}::${name.toLowerCase()}`;
         section = sectionByKey.get(key);
         if (!section) {
-          section = await prisma.section.create({ data: { suiteId, name, parentId } });
+          const orderIndex = await nextSiblingSectionOrder(suiteId, parentId);
+          section = await prisma.section.create({ data: { suiteId, name, parentId, orderIndex } });
           sectionByKey.set(key, section);
         }
         parentId = section.id;
@@ -119,6 +148,7 @@ casesBySuiteRouter.post(
     let created = 0;
     for (const row of rows) {
       const section = await resolveSectionPath(row.sectionPath);
+      const orderIndex = await nextSiblingCaseOrder(section.id);
       await prisma.testCase.create({
         data: {
           suiteId: suite.id,
@@ -126,15 +156,27 @@ casesBySuiteRouter.post(
           title: row.title,
           priority: row.priority,
           type: row.type,
+          // A CSV row's `steps` column is the same "step | expected" per-line format the STEPS
+          // template edits — labeling it TEXT (the schema default) would only surface the first
+          // step's text in the case form and hide the rest, the same class of bug the template
+          // column's migration backfill already had to correct once for pre-existing rows.
+          template: row.steps && row.steps.length > 0 ? 'STEPS' : 'TEXT',
           preconditions: row.preconditions,
           steps: serializeSteps(row.steps),
           expectedResult: row.expectedResult,
           referenceLink: row.referenceLink,
           createdById: req.user!.id,
+          orderIndex,
         },
       });
       created++;
     }
+
+    // One aggregate event per import batch, not one per row — a several-hundred-row CSV firing
+    // CASE_CREATED synchronously per case (this app's webhooks dispatch inline, per-request, with
+    // up to a 5s timeout each) would make a routine import take an unreasonable amount of time
+    // against any slow/unreachable webhook target.
+    if (created > 0) await dispatchWebhookEvent(suite.projectId, 'CASE_CREATED', { count: created, suiteId });
 
     res.status(201).json({ imported: created });
   }),
@@ -181,9 +223,11 @@ casesBySuiteRouter.post(
       where: { suiteId: suite.id, name: { equals: parsed.featureName } },
     });
     if (!section) {
-      section = await prisma.section.create({ data: { suiteId: suite.id, name: parsed.featureName } });
+      const orderIndex = await nextSectionOrderIndex(suite.id, null);
+      section = await prisma.section.create({ data: { suiteId: suite.id, name: parsed.featureName, orderIndex } });
     }
 
+    let nextOrderIndex = await nextCaseOrderIndex(section.id);
     let created = 0;
     for (const scenario of parsed.scenarios) {
       await prisma.testCase.create({
@@ -194,10 +238,14 @@ casesBySuiteRouter.post(
           template: 'BDD',
           bddLines: JSON.stringify(scenario.lines),
           createdById: req.user!.id,
+          orderIndex: nextOrderIndex++,
         },
       });
       created++;
     }
+
+    // Same one-event-per-batch reasoning as the CSV importer above.
+    if (created > 0) await dispatchWebhookEvent(suite.projectId, 'CASE_CREATED', { count: created, suiteId: suite.id });
 
     res.status(201).json({ imported: created, sectionName: parsed.featureName });
   }),
@@ -224,9 +272,13 @@ casesBySectionRouter.post(
   '/',
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
-    const section = await prisma.section.findUnique({ where: { id: req.params.sectionId } });
+    const section = await prisma.section.findUnique({
+      where: { id: req.params.sectionId },
+      include: { suite: { select: { projectId: true } } },
+    });
     if (!section) throw new NotFoundError('Section');
     const { labelIds, sharedStepSetIds, ...body } = createCaseSchema.parse(req.body);
+    const orderIndex = await nextCaseOrderIndex(section.id);
     const testCase = await prisma.testCase.create({
       data: {
         ...body,
@@ -235,11 +287,13 @@ casesBySectionRouter.post(
         suiteId: section.suiteId,
         sectionId: section.id,
         createdById: req.user!.id,
+        orderIndex,
       },
     });
     if (labelIds && labelIds.length > 0) await setCaseLabels(testCase.id, labelIds);
     if (sharedStepSetIds && sharedStepSetIds.length > 0) await setCaseSharedSteps(testCase.id, sharedStepSetIds);
     const withLabels = await prisma.testCase.findUniqueOrThrow({ where: { id: testCase.id }, include: CASE_INCLUDE });
+    await dispatchWebhookEvent(section.suite.projectId, 'CASE_CREATED', { caseId: testCase.id, title: testCase.title });
     res.status(201).json({ case: toPublicCase(withLabels) });
   }),
 );
@@ -256,6 +310,17 @@ casesRouter.patch(
   asyncHandler(async (req, res) => {
     const { caseIds, ...fields } = bulkUpdateCasesSchema.parse(req.body);
     if (Object.keys(fields).length === 0) throw new BadRequestError('At least one field (priority/type/sectionId) is required');
+    // Cross-suite moves are deliberately unsupported (see root CLAUDE.md's drag-and-drop scope
+    // note) — without this check, sectionId could be set to a section in a different suite than
+    // the case's own (unchanged) suiteId, since the two are independent columns on TestCase.
+    // That produced a genuinely split/orphaned case: counted in its original suite's case list by
+    // suiteId, but also showing up when browsing the new suite's section by sectionId.
+    if (fields.sectionId) {
+      const section = await prisma.section.findUnique({ where: { id: fields.sectionId } });
+      if (!section) throw new NotFoundError('Section');
+      const mismatched = await prisma.testCase.count({ where: { id: { in: caseIds }, suiteId: { not: section.suiteId } } });
+      if (mismatched > 0) throw new BadRequestError('The target section must belong to the same suite as the test case(s) being moved');
+    }
     const { count } = await prisma.testCase.updateMany({ where: { id: { in: caseIds } }, data: fields });
     res.json({ updated: count });
   }),
@@ -331,6 +396,14 @@ casesRouter.patch(
   requireRole(...WRITE_ROLES),
   asyncHandler(async (req, res) => {
     const { labelIds, sharedStepSetIds, ...body } = updateCaseSchema.parse(req.body);
+    if (body.sectionId) {
+      const existing = await prisma.testCase.findUnique({ where: { id: req.params.id }, select: { suiteId: true } });
+      if (!existing) throw new NotFoundError('Test case');
+      const section = await prisma.section.findUnique({ where: { id: body.sectionId } });
+      if (!section || section.suiteId !== existing.suiteId) {
+        throw new BadRequestError('The target section must belong to the same suite as the test case');
+      }
+    }
     const testCase = await prisma.testCase.update({
       where: { id: req.params.id },
       data: { ...body, steps: serializeSteps(body.steps), bddLines: serializeSteps(body.bddLines) },
@@ -390,10 +463,35 @@ casesRouter.post(
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
     const body = bulkDeleteCasesSchema.parse(req.body);
+    // Fetched before the update, since a case-scoped record is needed to log against — this
+    // route (unlike single-case delete just above) previously had no logAudit call at all, a
+    // real gap given root CLAUDE.md documents "case delete" as a logged action without
+    // distinguishing which of the two actual delete code paths honors that.
+    const targets = await prisma.testCase.findMany({
+      where: { id: { in: body.caseIds }, isDeleted: false },
+      select: { id: true, suite: { select: { projectId: true } } },
+    });
     const { count } = await prisma.testCase.updateMany({
       where: { id: { in: body.caseIds }, isDeleted: false },
       data: { isDeleted: true },
     });
+    // One summary entry per project touched, not one per case — a bulk action spanning hundreds
+    // of cases doesn't need hundreds of near-identical log lines to be useful.
+    const byProject = new Map<string, { count: number; sampleId: string }>();
+    for (const t of targets) {
+      const existing = byProject.get(t.suite.projectId);
+      byProject.set(t.suite.projectId, { count: (existing?.count ?? 0) + 1, sampleId: existing?.sampleId ?? t.id });
+    }
+    for (const [projectId, { count: n, sampleId }] of byProject) {
+      await logAudit({
+        projectId,
+        actorId: req.user!.id,
+        action: 'CASE_DELETED',
+        entityType: 'TestCase',
+        entityId: sampleId,
+        summary: `Bulk-deleted ${n} case(s)`,
+      });
+    }
     res.json({ deleted: count });
   }),
 );
@@ -428,10 +526,20 @@ casesRouter.delete(
   '/:id/permanent',
   requireRole('ADMIN', 'LEAD'),
   asyncHandler(async (req, res) => {
-    const testCase = await prisma.testCase.findUnique({ where: { id: req.params.id } });
+    const testCase = await prisma.testCase.findUnique({ where: { id: req.params.id }, include: { suite: true } });
     if (!testCase) throw new NotFoundError('Test case');
     if (!testCase.isDeleted) throw new BadRequestError('Case must be soft-deleted before it can be permanently deleted');
     await prisma.testCase.delete({ where: { id: req.params.id } });
+    // The irreversible step deserves this more than the soft-delete does, yet previously had no
+    // logAudit call at all — a real gap, not a deliberate omission.
+    await logAudit({
+      projectId: testCase.suite.projectId,
+      actorId: req.user!.id,
+      action: 'CASE_PERMANENTLY_DELETED',
+      entityType: 'TestCase',
+      entityId: testCase.id,
+      summary: `Permanently deleted case "${testCase.title}"`,
+    });
     res.status(204).send();
   }),
 );

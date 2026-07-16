@@ -14,6 +14,8 @@ import { DefectText } from '../../components/DefectText';
 import { Field, Input, Label, Select, Textarea } from '../../components/Input';
 import { StackedStatusBar, StatusLegend } from '../../components/StackedStatusBar';
 import { PrintButton } from '../../components/PrintButton';
+import { useToast } from '../../components/Toast';
+import { ApiError } from '../../lib/apiClient';
 import { DraftDefectPanel } from './DraftDefectPanel';
 import { RerunDialog } from './RerunDialog';
 import { ResultAttachments } from './ResultAttachments';
@@ -51,6 +53,21 @@ function formatElapsed(ms: number): string {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// A run's own end date wins; else its plan's own end date; else the date the PLAN ITSELF
+// inherits from its milestone; else the run's own direct milestone (only populated when a run is
+// tied to a milestone with no plan involved at all). Checking plan.milestone before falling back
+// to the run's direct milestone is what makes this resolve a real 3-level chain instead of
+// silently stopping after 2 hops — a run created under a plan never copies that plan's
+// milestoneId onto its own milestoneId (see runs/service.ts), so run.milestone alone was never
+// enough to reach a milestone reached only through the run's plan, the ordinary way to use the
+// hierarchy.
+function effectiveEndDateInfo(run: TestRun): { date: string; source: 'plan' | 'milestone' } | null {
+  if (run.plan?.endDate) return { date: run.plan.endDate, source: 'plan' };
+  if (run.plan?.milestone?.dueDate) return { date: run.plan.milestone.dueDate, source: 'milestone' };
+  if (run.milestone?.dueDate) return { date: run.milestone.dueDate, source: 'milestone' };
+  return null;
 }
 
 function SummaryBar({ summary }: { summary: runsApi.RunSummary }) {
@@ -193,12 +210,19 @@ function TestRow({
   onAdvance: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [comment, setComment] = useState('');
   const [defects, setDefects] = useState('');
   const [showDraft, setShowDraft] = useState(false);
-  const [stepStatuses, setStepStatuses] = useState<Record<number, ResultStatus>>({});
-  const [stepActuals, setStepActuals] = useState<Record<number, string>>({});
+  const [showQuickAdvanceMenu, setShowQuickAdvanceMenu] = useState(false);
   const [submitAssigneeId, setSubmitAssigneeId] = useState(test.assignedTo?.id ?? '');
+  // Resyncs whenever the server's own view of the assignee changes (a successful reassign
+  // refetches `test`, or the DB simply never changed because a reassign attempt failed) — without
+  // this, the dropdown could keep showing a value that was never actually persisted, since the
+  // useState initializer above only runs once at mount.
+  useEffect(() => {
+    setSubmitAssigneeId(test.assignedTo?.id ?? '');
+  }, [test.assignedTo?.id]);
   const [version, setVersion] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState('');
   const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null);
@@ -231,18 +255,18 @@ function TestRow({
 
   const submitResult = useMutation({
     mutationFn: (status: ResultStatus) => {
-      const stepResults =
-        test.templateSnapshot === 'STEPS' && test.stepsSnapshot && test.stepsSnapshot.length > 0
-          ? test.stepsSnapshot.map((_, i) => ({ status: stepStatuses[i] ?? 'UNTESTED', actual: stepActuals[i] || undefined }))
-          : undefined;
-      const elapsedMs = elapsedSeconds ? Number(elapsedSeconds) * 1000 : undefined;
+      // Clamped client-side (not just relying on the server's own cap) so a stray negative or
+      // absurdly large typed value doesn't round-trip to a rejected request — this field isn't
+      // inside a <form>, so the Input's min/max attributes above are display hints only and are
+      // never enforced by a native submit event.
+      const rawSeconds = elapsedSeconds ? Number(elapsedSeconds) : NaN;
+      const elapsedMs = Number.isFinite(rawSeconds) ? Math.min(Math.max(rawSeconds, 0), 24 * 60 * 60) * 1000 : undefined;
       return runsApi.submitResult(test.id, {
         status,
         comment: comment || undefined,
         defects: defects || undefined,
         version: version || undefined,
         elapsedMs,
-        stepResults,
       });
     },
     onSuccess: () => {
@@ -251,16 +275,32 @@ function TestRow({
       setVersion('');
       setElapsedSeconds('');
       setTimerStartedAt(null);
-      setStepStatuses({});
-      setStepActuals({});
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['tests', test.id, 'results'] });
+      // Report queries (`['reports', ...]`) are keyed independently of `['runs', ...]` and were
+      // never invalidated by anything that changes run/result data — a report tab left open (or
+      // just cached within the 10s staleTime) kept showing pre-submission data indefinitely,
+      // since refetchOnWindowFocus is off project-wide. Prefix-matches every report query key.
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to submit result', 'error'),
   });
 
-  function submitStatus(status: ResultStatus, advance?: boolean) {
+  // Reassign, then submit — not two independently-fired requests. These previously ran as two
+  // unsequenced mutations with no error handling on either: a failure in one (a closed run, a
+  // dropped connection, anything) had no visible effect beyond the button re-enabling, and a
+  // reassign racing its own result submission could land in either order. Awaiting the reassign
+  // first (only when the dropdown actually changed) and stopping on its failure means the
+  // combined action either fully succeeds in the intended order or fails visibly — it never
+  // silently submits a result under the wrong assignee.
+  async function submitStatus(status: ResultStatus, advance?: boolean) {
     if (submitAssigneeId !== (test.assignedTo?.id ?? '')) {
-      reassign.mutate(submitAssigneeId || null);
+      try {
+        await reassign.mutateAsync(submitAssigneeId || null);
+      } catch (err) {
+        showToast(err instanceof ApiError ? err.message : 'Failed to reassign — result not submitted', 'error');
+        return;
+      }
     }
     submitResult.mutate(status, advance ? { onSuccess: () => onAdvance() } : undefined);
   }
@@ -289,6 +329,7 @@ function TestRow({
   const reassign = useMutation({
     mutationFn: (assignedToId: string | null) => runsApi.reassignTest(test.id, assignedToId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', test.runId, 'tests'] }),
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to reassign', 'error'),
   });
 
   const hasOpenDefect = (test.status === 'FAILED' || test.status === 'BLOCKED') && !!test.latestDefects;
@@ -311,7 +352,7 @@ function TestRow({
             checked={selected}
             onChange={onToggleSelect}
             onClick={(e) => e.stopPropagation()}
-            className="h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600"
+            className="no-print h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600"
             aria-label={`Select ${test.titleSnapshot}`}
           />
         )}
@@ -322,18 +363,31 @@ function TestRow({
         </button>
         <div className="flex shrink-0 items-center gap-2">
           {canAssign ? (
-            <Select
-              value={test.assignedTo?.id ?? ''}
-              onChange={(e) => reassign.mutate(e.target.value || null)}
-              className="w-36 py-1 text-xs"
-            >
-              <option value="">Unassigned</option>
-              {directory.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.id === currentUserId ? `${u.name} (me)` : u.name}
-                </option>
-              ))}
-            </Select>
+            <>
+              {/* Wrapped in its own no-print span, not just a class on the <select> — Select
+                  (components/Input.tsx) renders its dropdown chevron as a sibling icon inside
+                  its own wrapper div, outside where the select's own className reaches, so
+                  hiding only the <select> left a stray floating chevron in print output. */}
+              <span className="no-print">
+                <Select
+                  value={test.assignedTo?.id ?? ''}
+                  onChange={(e) => reassign.mutate(e.target.value || null)}
+                  className="w-36 py-1 text-xs"
+                >
+                  <option value="">Unassigned</option>
+                  {directory.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.id === currentUserId ? `${u.name} (me)` : u.name}
+                    </option>
+                  ))}
+                </Select>
+              </span>
+              {/* A live <select> prints as an interactive form widget, not report content —
+                  plain text substitute shown only when printing. */}
+              <span className="hidden print:inline text-xs text-slate-400 dark:text-slate-500">
+                {test.assignedTo?.name ?? 'Unassigned'}
+              </span>
+            </>
           ) : (
             <span className="text-xs text-slate-400 dark:text-slate-500">{test.assignedTo?.name ?? 'Unassigned'}</span>
           )}
@@ -376,45 +430,7 @@ function TestRow({
             )
           ) : (
             test.stepsSnapshot &&
-            test.stepsSnapshot.length > 0 &&
-            (canSubmit ? (
-              <div className="space-y-1.5">
-                {test.stepsSnapshot.map((step, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm">
-                    <span className="mt-1.5 w-4 shrink-0 text-slate-400 dark:text-slate-500">{i + 1}.</span>
-                    <div className="flex-1">
-                      <p className="text-slate-600 dark:text-slate-400">
-                        {step.step}
-                        {step.expected && <span className="text-slate-400 dark:text-slate-500"> → {step.expected}</span>}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2">
-                        <div className="w-32 shrink-0">
-                          <Select
-                            aria-label={`Step ${i + 1} status`}
-                            value={stepStatuses[i] ?? 'UNTESTED'}
-                            onChange={(e) => setStepStatuses((prev) => ({ ...prev, [i]: e.target.value as ResultStatus }))}
-                            className="py-1 text-xs"
-                          >
-                            {(['UNTESTED', ...STATUS_OPTIONS] as ResultStatus[]).map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-                        <Input
-                          aria-label={`Step ${i + 1} actual result`}
-                          placeholder="Actual result (optional)"
-                          value={stepActuals[i] ?? ''}
-                          onChange={(e) => setStepActuals((prev) => ({ ...prev, [i]: e.target.value }))}
-                          className="flex-1 py-1 text-xs"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
+            test.stepsSnapshot.length > 0 && (
               <ol className="ml-5 list-decimal text-sm text-slate-600 dark:text-slate-400">
                 {test.stepsSnapshot.map((step, i) => (
                   <li key={i}>
@@ -423,11 +439,13 @@ function TestRow({
                   </li>
                 ))}
               </ol>
-            ))
+            )
           )}
 
           {canSubmit && (
-            <div className="rounded-md bg-slate-50 dark:bg-slate-700 p-3">
+            // Draft/unsubmitted form fields, not report content — was previously unmarked and
+            // would print as empty input boxes if a row happened to be expanded while printing.
+            <div className="no-print rounded-md bg-slate-50 dark:bg-slate-700 p-3">
               <Field>
                 <Label htmlFor={`comment-${test.id}`}>Comment</Label>
                 <Textarea id={`comment-${test.id}`} rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -460,6 +478,7 @@ function TestRow({
                         id={`elapsed-${test.id}`}
                         type="number"
                         min={0}
+                        max={24 * 60 * 60}
                         placeholder="0"
                         value={timerStartedAt !== null ? String(liveSeconds) : elapsedSeconds}
                         disabled={timerStartedAt !== null}
@@ -504,13 +523,45 @@ function TestRow({
                   metadata fields, without reordering them ahead of Comment/Defects (recording
                   why a test failed before committing the status is the more correct order). */}
               <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 dark:border-slate-600">
-                <button
-                  disabled={submitResult.isPending}
-                  onClick={() => submitStatus('PASSED', true)}
-                  className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-                >
-                  Pass &amp; Next
-                </button>
+                {/* Matches real TestRail's "Pass & Next" button: the main label always quick-
+                    submits Passed and advances; the attached arrow opens a menu to quick-submit
+                    any other status through that same advancing path — a separate, faster route
+                    than the plain Failed/Blocked/Retest buttons beside it, which still submit
+                    without advancing for when a tester wants to add a comment/defect first. */}
+                <div className="relative flex">
+                  <button
+                    disabled={submitResult.isPending}
+                    onClick={() => submitStatus('PASSED', true)}
+                    className="rounded-l-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    Pass &amp; Next
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitResult.isPending}
+                    aria-label="Quick-submit another status and advance"
+                    onClick={() => setShowQuickAdvanceMenu((v) => !v)}
+                    className="rounded-r-md border-l border-emerald-700 bg-emerald-600 px-1.5 py-2 text-white hover:bg-emerald-700"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                  {showQuickAdvanceMenu && (
+                    <div className="absolute left-0 top-full z-10 mt-1 w-40 rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-800">
+                      {STATUS_OPTIONS.map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => {
+                            setShowQuickAdvanceMenu(false);
+                            submitStatus(status, true);
+                          }}
+                          className="block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                        >
+                          {status} &amp; Next
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {STATUS_OPTIONS.map((status) => (
                   <button
                     key={status}
@@ -546,7 +597,10 @@ function TestRow({
           )}
 
           {resultsQuery.data && resultsQuery.data.results.length > 0 && (
-            <div>
+            // Result history (comments, defects, per-step breakdown) is exactly the kind of
+            // secondary detail Outline print mode is meant to hide — the status badge in the
+            // row header above this stays visible either way.
+            <div className="print-detail-only">
               <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">History</h4>
               <div className="space-y-1.5">
                 {resultsQuery.data.results.map((r) => (
@@ -605,6 +659,7 @@ export function RunExecutionPage() {
   const canSubmit = user?.role === 'ADMIN' || user?.role === 'LEAD' || user?.role === 'TESTER';
   const canManage = user?.role === 'ADMIN' || user?.role === 'LEAD';
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkAssigneeId, setBulkAssigneeId] = useState('');
   const [appliedFilter, setAppliedFilter] = useState<AppliedFilter | null>(null);
@@ -631,11 +686,20 @@ export function RunExecutionPage() {
 
   const closeRun = useMutation({
     mutationFn: () => runsApi.closeRun(runId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', runId] }),
+    // Closing/reopening changes which runs count as "active" for several reports/dashboards —
+    // real user-reported bug: a report tab opened before a run was closed kept showing it as
+    // incomplete/absent indefinitely, since nothing here ever invalidated `['reports', ...]`.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['runs', runId] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
   const reopenRun = useMutation({
     mutationFn: () => runsApi.reopenRun(runId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs', runId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['runs', runId] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
 
   const updateDates = useMutation({
@@ -654,6 +718,7 @@ export function RunExecutionPage() {
     mutationFn: (input: { statuses: ResultStatus[]; copyAssignees: boolean }) => runsApi.rerunRun(runId!, input),
     onSuccess: (res) => {
       setShowRerun(false);
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
       navigate(`/runs/${res.run.id}`);
     },
   });
@@ -661,12 +726,18 @@ export function RunExecutionPage() {
   const bulkAssign = useMutation({
     mutationFn: (vars: { testIds: string[]; assignedToId: string | null }) =>
       runsApi.bulkAssignTests(runId!, vars.testIds, vars.assignedToId),
+    // Deliberately does NOT clear selectedIds — a tester commonly wants to assign a selection
+    // and then immediately bulk-set a status for that same selection via bulkResult below.
+    // Clearing here forced reselecting the exact same tests a second time for no reason.
     onSuccess: () => {
-      setSelectedIds(new Set());
       setBulkAssigneeId('');
       setFilterAssigneeId('');
       queryClient.invalidateQueries({ queryKey: ['runs', runId, 'tests'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
+    // Previously had no onError at all — a rejected request (e.g. a selection past the
+    // testIds cap) failed completely silently, with no visible sign anything happened.
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to assign selected tests', 'error'),
   });
 
   const bulkResult = useMutation({
@@ -675,7 +746,9 @@ export function RunExecutionPage() {
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ['runs', runId, 'tests'] });
       queryClient.invalidateQueries({ queryKey: ['runs', runId, 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
     },
+    onError: (err) => showToast(err instanceof ApiError ? err.message : 'Failed to submit results for selected tests', 'error'),
   });
 
   if (!runQuery.data) return <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>;
@@ -764,15 +837,18 @@ export function RunExecutionPage() {
                     {run.startDate && run.endDate && ' · '}
                     {run.endDate && `Ends ${new Date(run.endDate).toLocaleDateString()}`}
                   </>
-                ) : run.plan?.endDate || run.milestone?.dueDate ? (
-                  <>Inherits {run.plan?.endDate ? 'plan end date' : 'milestone due date'}: {new Date((run.plan?.endDate || run.milestone?.dueDate)!).toLocaleDateString()}</>
+                ) : effectiveEndDateInfo(run) ? (
+                  <>
+                    Inherits {effectiveEndDateInfo(run)!.source === 'plan' ? 'plan end date' : 'milestone due date'}:{' '}
+                    {new Date(effectiveEndDateInfo(run)!.date).toLocaleDateString()}
+                  </>
                 ) : (
                   'No dates set'
                 )}
               </span>
               {canManage && !run.isCompleted && (
                 <button
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  className="no-print text-blue-600 dark:text-blue-400 hover:underline"
                   onClick={() => {
                     setStartDate(run.startDate ? run.startDate.slice(0, 10) : '');
                     setEndDate(run.endDate ? run.endDate.slice(0, 10) : '');
@@ -785,12 +861,12 @@ export function RunExecutionPage() {
             </div>
           )}
           {run.endDate &&
-            (run.plan?.endDate || run.milestone?.dueDate) &&
-            new Date(run.endDate) > new Date((run.plan?.endDate || run.milestone?.dueDate)!) && (
+            effectiveEndDateInfo(run) &&
+            new Date(run.endDate) > new Date(effectiveEndDateInfo(run)!.date) && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                This run's end date is after its {run.plan?.endDate ? 'plan' : 'milestone'}'s{' '}
-                {run.plan?.endDate ? 'end date' : 'due date'} (
-                {new Date((run.plan?.endDate || run.milestone?.dueDate)!).toLocaleDateString()}).
+                This run's end date is after its {effectiveEndDateInfo(run)!.source}'s{' '}
+                {effectiveEndDateInfo(run)!.source === 'plan' ? 'end date' : 'due date'} (
+                {new Date(effectiveEndDateInfo(run)!.date).toLocaleDateString()}).
               </p>
             )}
         </div>
@@ -820,6 +896,12 @@ export function RunExecutionPage() {
           {!canManage && run.isCompleted && <span className="text-sm text-slate-500 dark:text-slate-400">Closed</span>}
         </div>
       </div>
+
+      {run.isCompleted && (
+        <div className="mb-4 rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+          This test run is completed.
+        </div>
+      )}
 
       <RerunDialog
         open={showRerun}

@@ -9,6 +9,7 @@ import { Badge } from '../../components/Badge';
 import { Field, Input, Label, Select } from '../../components/Input';
 import { ApiError } from '../../lib/apiClient';
 import { PrintButton } from '../../components/PrintButton';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 
 function toDateInput(iso: string | null): string {
   return iso ? iso.slice(0, 10) : '';
@@ -114,12 +115,19 @@ export function MilestonesTab() {
   const [parentId, setParentId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Milestone | null>(null);
 
   const milestonesQuery = useQuery({
     queryKey: ['projects', projectId, 'milestones'],
     queryFn: () => milestonesApi.listMilestones(projectId!),
   });
   const milestones = milestonesQuery.data?.milestones ?? [];
+
+  const deleteImpactQuery = useQuery({
+    queryKey: ['milestones', deleteTarget?.id, 'delete-impact'],
+    queryFn: () => milestonesApi.getMilestoneDeleteImpact(deleteTarget!.id),
+    enabled: !!deleteTarget,
+  });
 
   const createMilestone = useMutation({
     mutationFn: () =>
@@ -154,7 +162,10 @@ export function MilestonesTab() {
 
   const deleteMilestone = useMutation({
     mutationFn: (id: string) => milestonesApi.deleteMilestone(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'milestones'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'milestones'] });
+      setDeleteTarget(null);
+    },
   });
 
   function handleSubmit(e: FormEvent) {
@@ -238,10 +249,10 @@ export function MilestonesTab() {
                       {m.startDate && <>Starts {new Date(m.startDate).toLocaleDateString()} </>}
                       {m.dueDate && <>· Due {new Date(m.dueDate).toLocaleDateString()}</>}
                     </p>
-                    {m.references && <p className="text-xs text-slate-400 dark:text-slate-500">Refs: {m.references}</p>}
+                    {m.references && <p className="print-detail-only text-xs text-slate-400 dark:text-slate-500">Refs: {m.references}</p>}
                   </div>
                   {canManage && (
-                    <div className="flex gap-2">
+                    <div className="no-print flex gap-2">
                       {status === 'Upcoming' && (
                         <button
                           className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
@@ -260,7 +271,7 @@ export function MilestonesTab() {
                       >
                         {m.isCompleted ? 'Reopen' : 'Mark complete'}
                       </button>
-                      <button className="text-xs text-red-600 dark:text-red-400 hover:underline" onClick={() => deleteMilestone.mutate(m.id)}>
+                      <button className="text-xs text-red-600 dark:text-red-400 hover:underline" onClick={() => setDeleteTarget(m)}>
                         Delete
                       </button>
                     </div>
@@ -272,6 +283,46 @@ export function MilestonesTab() {
         })}
         {milestones.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No milestones yet.</p>}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteMilestone.mutate(deleteTarget!.id)}
+        title={`Delete "${deleteTarget?.name}"?`}
+        confirmLabel="Delete milestone"
+        confirming={deleteMilestone.isPending}
+        message={
+          deleteImpactQuery.data ? (
+            <>
+              {deleteImpactQuery.data.planCount === 0 && deleteImpactQuery.data.runCount === 0 && deleteImpactQuery.data.childMilestoneCount === 0 ? (
+                'Nothing else references this milestone.'
+              ) : (
+                <>
+                  {deleteImpactQuery.data.planCount > 0 && (
+                    <>
+                      <strong>{deleteImpactQuery.data.planCount}</strong> plan(s){' '}
+                    </>
+                  )}
+                  {deleteImpactQuery.data.runCount > 0 && (
+                    <>
+                      and <strong>{deleteImpactQuery.data.runCount}</strong> run(s){' '}
+                    </>
+                  )}
+                  {(deleteImpactQuery.data.planCount > 0 || deleteImpactQuery.data.runCount > 0) && 'will be unlinked from this milestone (their inherited dates will no longer apply). '}
+                  {deleteImpactQuery.data.childMilestoneCount > 0 && (
+                    <>
+                      <strong>{deleteImpactQuery.data.childMilestoneCount}</strong> child milestone(s) will move up to this milestone's own parent.{' '}
+                    </>
+                  )}
+                </>
+              )}
+              This cannot be undone.
+            </>
+          ) : (
+            'Loading impact…'
+          )
+        }
+      />
     </div>
   );
 }

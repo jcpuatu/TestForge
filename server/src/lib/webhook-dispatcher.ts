@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { prisma } from '../config/prisma-client';
+import { assertPublicHttpUrl } from './urlSafety';
 
 export type WebhookEvent = 'RUN_COMPLETED' | 'RUN_CREATED' | 'CASE_CREATED';
 
@@ -16,6 +17,10 @@ async function deliver(webhook: { id: string; url: string; secret: string }, pay
   let responseBody: string | null = null;
 
   try {
+    // Re-validated here, not just at registration time — a hostname's DNS record can change
+    // between when a webhook was created and when it fires (DNS rebinding), and this also covers
+    // any webhook that was already registered before this safety check existed.
+    await assertPublicHttpUrl(webhook.url);
     const res = await fetch(webhook.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-TestForge-Signature': signature },
@@ -38,4 +43,11 @@ export async function dispatchWebhookEvent(projectId: string, event: WebhookEven
   const webhooks = await prisma.webhook.findMany({ where: { projectId, event, isActive: true } });
   const fullPayload = { event, ...payload };
   await Promise.allSettled(webhooks.map((webhook) => deliver(webhook, fullPayload)));
+}
+
+// Delivers to exactly the one webhook being tested — deliberately not routed through
+// dispatchWebhookEvent, which matches by project+event and would otherwise fan a "test this one
+// webhook" action out to every other active webhook sharing the same project and event type.
+export async function deliverTestPing(webhook: { id: string; url: string; secret: string }, triggeredBy: string) {
+  await deliver(webhook, { event: 'ping', ping: true, triggeredBy });
 }

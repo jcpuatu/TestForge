@@ -46,6 +46,12 @@ export function createPlanRun(planId: string, input: { name: string; suiteId: st
   return apiFetch<{ run: TestRun }>(`/plans/${planId}/runs`, { method: 'POST', body: input });
 }
 
+export interface RerunFailure {
+  runId: string;
+  runName: string;
+  message: string;
+}
+
 export function rerunPlan(planId: string, input: { statuses: ResultStatus[]; copyAssignees: boolean }) {
-  return apiFetch<{ runs: TestRun[]; skipped: number }>(`/plans/${planId}/rerun`, { method: 'POST', body: input });
+  return apiFetch<{ runs: TestRun[]; skipped: number; failed: RerunFailure[] }>(`/plans/${planId}/rerun`, { method: 'POST', body: input });
 }

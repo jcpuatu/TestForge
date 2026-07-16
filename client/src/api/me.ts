@@ -8,7 +8,7 @@ export interface MyTest extends RunCase {
     projectId: string;
     project: { name: string };
     startDate: string | null;
-    plan: { startDate: string | null } | null;
+    plan: { startDate: string | null; milestone: { startDate: string | null } | null } | null;
     milestone: { startDate: string | null } | null;
   };
 }

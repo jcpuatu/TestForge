@@ -52,7 +52,7 @@ export async function getComparisonForReferences(projectId: string, query: Recor
   return { runs, references: [...byReference.values()] };
 }
 
-const RESULT_DISTRIBUTION_FIELDS = ['status', 'type', 'assignedTo', 'template'] as const;
+const RESULT_DISTRIBUTION_FIELDS = ['status', 'type', 'assignedTo', 'template', 'priority'] as const;
 type ResultDistributionField = (typeof RESULT_DISTRIBUTION_FIELDS)[number];
 
 export async function getResultPropertyDistribution(projectId: string, query: Record<string, unknown>) {
@@ -67,17 +67,28 @@ export async function getResultPropertyDistribution(projectId: string, query: Re
 
   const tests = await prisma.runCase.findMany({
     where: { runId: { in: scopedRunIds } },
-    select: { status: true, templateSnapshot: true, assignedTo: { select: { name: true } }, case: { select: { type: true } } },
+    select: { status: true, templateSnapshot: true, typeSnapshot: true, priority: true, assignedToId: true },
   });
 
-  // "Type" has no RunCase snapshot field (unlike template/priority) — falls back to the live
-  // TestCase.type via the relation, matching the fact that this is the one property distinct
-  // enough from the snapshot fields that TestRail groups Results by it anyway.
+  // Group by assignedToId (a stable, unique key), never by name directly — two different users
+  // who happen to share a display name would otherwise silently merge into one bucket. Matches
+  // the same id-then-resolve-to-name pattern already used correctly by GET /me/workload.
+  if (groupBy === 'assignedTo') {
+    const ids = [...new Set(tests.map((t) => t.assignedToId).filter((id): id is string => id !== null))];
+    const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    const nameById = new Map(users.map((u) => [u.id, u.name]));
+    const buckets = groupByField(tests, (t) => t.assignedToId ?? '__unassigned__').map((b) => ({
+      ...b,
+      value: b.value === '__unassigned__' ? 'Unassigned' : (nameById.get(b.value) ?? 'Unknown'),
+    }));
+    return { runs, groupBy, total: tests.length, buckets };
+  }
+
   const getField = (t: (typeof tests)[number]): string => {
     if (groupBy === 'status') return t.status;
     if (groupBy === 'template') return t.templateSnapshot;
-    if (groupBy === 'assignedTo') return t.assignedTo?.name ?? 'Unassigned';
-    return t.case?.type ?? 'Unknown';
+    if (groupBy === 'priority') return t.priority;
+    return t.typeSnapshot ?? 'Unknown';
   };
 
   return { runs, groupBy, total: tests.length, buckets: groupByField(tests, getField) };

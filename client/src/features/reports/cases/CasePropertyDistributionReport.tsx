@@ -49,7 +49,7 @@ export function CasePropertyDistributionReport({ projectId }: { projectId: strin
     >
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
       {data && (
-        <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+        <div className="print-card rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{data.total} test case(s) total</p>
           <PropertyDistributionChart buckets={data.buckets} csvFilename={`case-property-distribution-${groupBy}.csv`} />
         </div>

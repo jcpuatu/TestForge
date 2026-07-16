@@ -38,7 +38,10 @@ import { meRouter } from './modules/me/routes';
 export const app = express();
 
 app.use(cors({ origin: env.clientOrigin, credentials: true }));
-app.use(express.json());
+// Express's default json() body limit is 100kb — too small for a real CSV case import (a few
+// hundred richly-detailed test cases easily exceeds it), so a legitimate import was silently
+// rejected by the body parser before ever reaching the import route.
+app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
 app.get('/api/v1/health', (_req, res) => {

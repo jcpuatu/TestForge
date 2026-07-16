@@ -32,7 +32,7 @@ export function SharedStepsManager({ projectId, sharedStepSets }: { projectId: s
   }
 
   const createSet = useMutation({
-    mutationFn: () => sharedStepsApi.createSharedStepSet(projectId, newName, textToSteps(newSteps) ?? []),
+    mutationFn: () => sharedStepsApi.createSharedStepSet(projectId, newName, textToSteps(newSteps)),
     onSuccess: () => {
       setNewName('');
       setNewSteps('');
@@ -43,7 +43,7 @@ export function SharedStepsManager({ projectId, sharedStepSets }: { projectId: s
   });
 
   const updateSet = useMutation({
-    mutationFn: () => sharedStepsApi.updateSharedStepSet(editingId!, { name: editingName, steps: textToSteps(editingSteps) ?? [] }),
+    mutationFn: () => sharedStepsApi.updateSharedStepSet(editingId!, { name: editingName, steps: textToSteps(editingSteps) }),
     onSuccess: () => {
       setEditingId(null);
       invalidate();

@@ -78,4 +78,36 @@ describe('section move/reorder', () => {
       .send({ parentId: section.body.section.id, orderIndex: 0 });
     expect(res.status).toBe(400);
   });
+
+  // Regression test: reparenting only re-normalized the DESTINATION parent's sibling list —
+  // the ORIGIN parent's remaining children kept whatever orderIndex gap the moved section left
+  // behind (e.g. [0,1,2,3,4] minus index 2 stayed [0,1,3,4] instead of renormalizing to [0,1,2,3]).
+  it('renormalizes the origin parent\'s remaining siblings after a reparent, leaving no gap', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: `Origin Renormalize Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth()).send({ name: 'Suite' });
+    const originSuiteId = suite.body.suite.id;
+    const target = await request(app).post(`/api/v1/suites/${originSuiteId}/sections`).set(auth()).send({ name: 'Target' });
+
+    const names = ['S0', 'S1', 'S2', 'S3', 'S4'];
+    const created: Record<string, string> = {};
+    for (const name of names) {
+      const s = await request(app).post(`/api/v1/suites/${originSuiteId}/sections`).set(auth()).send({ name });
+      created[name] = s.body.section.id;
+    }
+
+    // Reparent S2 (index 2) out of the top-level group, into Target.
+    const res = await request(app)
+      .post(`/api/v1/sections/${created.S2}/move`)
+      .set(auth())
+      .send({ parentId: target.body.section.id, orderIndex: 0 });
+    expect(res.status).toBe(200);
+
+    // Target itself is also a top-level section, so the remaining top-level group after S2
+    // leaves is Target + S0, S1, S3, S4 (5 sections) — checked as a whole set of orderIndex
+    // values, since renormalization can place Target at any position within it.
+    const remainingTopLevel = (res.body.sections as { id: string; parentId: string | null; orderIndex: number }[])
+      .filter((s) => s.parentId === null)
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    expect(remainingTopLevel.map((s) => s.orderIndex)).toEqual([0, 1, 2, 3, 4]);
+  });
 });

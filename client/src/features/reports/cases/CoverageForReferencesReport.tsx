@@ -60,15 +60,24 @@ export function CoverageForReferencesReport({ projectId }: { projectId: string }
       {reportQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
       {data && (
         <>
-          <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+          <div className="print-card mb-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="text-slate-700 dark:text-slate-300">
                 {Math.round(data.coveragePercent * 100)}% coverage — {data.coveredCount} of {data.total} cases have a reference
+                {/* This stat is always project/section-wide — it doesn't get recomputed for a
+                    "specific reference IDs" filter below, since "% of cases covered" isn't a
+                    meaningful question once you've already narrowed to one or two specific IDs.
+                    Previously this went unlabeled, so a filtered report silently showed an
+                    unfiltered headline percentage sitting right above a filtered list. */}
+                {referenceIds.length > 0 && (
+                  <span className="text-slate-400 dark:text-slate-500"> (not filtered by the reference IDs below)</span>
+                )}
               </span>
             </div>
             <StackedStatusBar
               counts={{ PASSED: data.coveredCount, FAILED: 0, BLOCKED: 0, RETEST: 0, UNTESTED: data.uncoveredCount }}
               total={data.total}
+              labels={{ PASSED: 'Has a reference', UNTESTED: 'No reference' }}
             />
           </div>
 
@@ -87,22 +96,29 @@ export function CoverageForReferencesReport({ projectId }: { projectId: string }
             />
           </div>
 
-          <div className="mb-4 divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-            {data.references.map((r) => (
-              <div key={r.reference} className="p-2.5">
-                <p className="mb-1 text-sm font-medium text-slate-800 dark:text-slate-200">{r.reference}</p>
-                {r.cases.map((c) => (
-                  <p key={c.id} className="pl-3 text-xs text-slate-500 dark:text-slate-400">
-                    {c.title}
-                  </p>
-                ))}
-              </div>
-            ))}
-            {data.references.length === 0 && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No references found.</p>}
-          </div>
+          {/* This block is what "Cases with references" actually refers to — the checkbox was
+              previously wired to a server-side field (casesWithReferences) the client never
+              read, so toggling it visibly changed nothing. Gating the real with-references
+              display instead, mirroring the without-references block's own working pattern
+              directly below. */}
+          {includeWithRefs && (
+            <div className="print-card mb-4 divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              {data.references.map((r) => (
+                <div key={r.reference} className="p-2.5">
+                  <p className="mb-1 text-sm font-medium text-slate-800 dark:text-slate-200">{r.reference}</p>
+                  {r.cases.map((c) => (
+                    <p key={c.id} className="pl-3 text-xs text-slate-500 dark:text-slate-400">
+                      {c.title}
+                    </p>
+                  ))}
+                </div>
+              ))}
+              {data.references.length === 0 && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No references found.</p>}
+            </div>
+          )}
 
           {includeWithoutRefs && data.casesWithoutReferences.length > 0 && (
-            <div className="divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div className="print-card divide-y divide-slate-200 dark:divide-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
               <p className="p-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Cases without references
               </p>
