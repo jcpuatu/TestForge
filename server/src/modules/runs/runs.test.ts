@@ -212,3 +212,25 @@ describe('runs and results', () => {
     expect(run.status).toBe(404);
   });
 });
+
+// Regression test: the runs list returned every run in a project unbounded, with a per-run
+// summary query fanned out over every row -- unbounded both in payload size and query count.
+describe('runs list pagination', () => {
+  it('paginates and reports accurate total/hasMore, without breaking the per-run summary fields', async () => {
+    const { projectId, suiteId } = await seedSuiteWithCases();
+    for (const name of ['Run 1', 'Run 2', 'Run 3']) {
+      await request(app).post(`/api/v1/projects/${projectId}/runs`).set(auth(adminToken)).send({ name, suiteId });
+    }
+
+    const page1 = await request(app).get(`/api/v1/projects/${projectId}/runs?page=1&pageSize=2`).set(auth(adminToken));
+    expect(page1.body.runs).toHaveLength(2);
+    expect(page1.body).toMatchObject({ total: 3, page: 1, pageSize: 2, hasMore: true });
+    // Per-run summary fields (counts/total from getRunSummary) still present on the paginated page.
+    expect(page1.body.runs[0]).toHaveProperty('counts');
+    expect(page1.body.runs[0]).toHaveProperty('total');
+
+    const page2 = await request(app).get(`/api/v1/projects/${projectId}/runs?page=2&pageSize=2`).set(auth(adminToken));
+    expect(page2.body.runs).toHaveLength(1);
+    expect(page2.body.hasMore).toBe(false);
+  });
+});

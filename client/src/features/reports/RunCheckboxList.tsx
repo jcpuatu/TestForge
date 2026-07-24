@@ -18,7 +18,10 @@ export function RunCheckboxList({
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
-  const { data } = useQuery({ queryKey: ['projects', projectId, 'runs'], queryFn: () => runsApi.listRuns(projectId) });
+  // This picker needs every run in the project to choose from, not just the first page -- it's
+  // already a small scrollable list (max-h-40), so requesting the max page size directly is
+  // simpler and better UX here than a nested Load More inside an already-scrolling container.
+  const { data } = useQuery({ queryKey: ['projects', projectId, 'runs', 'all'], queryFn: () => runsApi.listRuns(projectId, 1, 200) });
   const runs = data?.runs ?? [];
 
   if (runs.length === 0) return <p className="text-xs text-slate-400 dark:text-slate-500">No test runs yet.</p>;

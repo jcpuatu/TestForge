@@ -8,6 +8,7 @@ import { NotFoundError } from '../../lib/errors';
 import { deliverTestPing } from '../../lib/webhook-dispatcher';
 import { assertPublicHttpUrl } from '../../lib/urlSafety';
 import { createWebhookSchema, updateWebhookSchema } from './schema';
+import { paginationMeta, parsePagination } from '../../lib/pagination';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 
@@ -83,11 +84,17 @@ webhooksRouter.get(
   '/:id/deliveries',
   requireRole(...MANAGE_ROLES),
   asyncHandler(async (req, res) => {
-    const deliveries = await prisma.webhookDelivery.findMany({
-      where: { webhookId: req.params.id },
-      orderBy: { createdAt: 'desc' },
-      take: 25,
-    });
-    res.json({ deliveries });
+    // Previously a hard `take: 25` with no `skip` — every delivery attempt (success or failure)
+    // is logged permanently, so once a webhook fired more than 25 times, anything before the most
+    // recent 25 was silently unreachable through this endpoint. Real skip/take now, defaulting to
+    // the same 25-per-page size so a caller that never sends page/pageSize sees identical behavior
+    // to before.
+    const where = { webhookId: req.params.id };
+    const pagination = parsePagination(req.query as Record<string, unknown>, { defaultPageSize: 25 });
+    const [deliveries, total] = await Promise.all([
+      prisma.webhookDelivery.findMany({ where, orderBy: { createdAt: 'desc' }, skip: pagination.skip, take: pagination.take }),
+      prisma.webhookDelivery.count({ where }),
+    ]);
+    res.json({ deliveries, ...paginationMeta(total, pagination) });
   }),
 );

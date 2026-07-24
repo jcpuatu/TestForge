@@ -3,7 +3,8 @@ import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
 import { prisma } from '../../config/prisma-client';
 import { getActivitySummary, getCasePropertyDistribution, getCoverageForReferences, getStatusTops } from './casesReports';
-import { aggregateDefects, fetchLatestResultPerRunCase } from './runsMatrix';
+import { aggregateDefects, fetchLatestResultPerRunCase, resolveRunIds } from './runsMatrix';
+import { splitCsvParam } from './aggregation';
 import {
   getDefectsSummary,
   getDefectsSummaryForCases,
@@ -15,73 +16,92 @@ import {
   getResultPropertyDistribution,
 } from './resultsReports';
 import { buildSummaryReport, parseRunsScopeQuery } from './summaryReports';
+import { paginationMeta, parsePagination } from '../../lib/pagination';
+import { getOrSetCache } from '../../lib/cache';
+
+// Both dashboards fan out several queries per row (per-run status breakdown here, 5 queries per
+// *project* on the cross-project one below) and are read far more often than the underlying data
+// actually changes — a user staring at a dashboard re-triggers the same query on every poll/tab
+// switch. 30s is short enough that "just closed a run, why doesn't the dashboard show it yet" is
+// not a realistic complaint, long enough to absorb realistic repeat-view traffic.
+const DASHBOARD_CACHE_TTL_MS = 30_000;
+
+// A defect recurring across many runs on the same case can otherwise make one entry's `cases[]`
+// grow without bound, independent of how many distinct defects exist — capped the same way the
+// top-level list is paginated, just with a fixed cap instead of a page param (no UI need yet to
+// page through one defect's own occurrence history).
+const MAX_CASES_PER_DEFECT = 50;
 
 // Mounted at /api/v1/projects/:projectId/dashboard
 export const dashboardRouter = Router({ mergeParams: true });
 dashboardRouter.use(requireAuth);
 
+async function buildProjectDashboard(projectId: string) {
+  const [suiteCount, caseCount, runs, milestoneCount, planCount, activeGrouped] = await Promise.all([
+    prisma.suite.count({ where: { projectId } }),
+    prisma.testCase.count({ where: { suite: { projectId }, isDeleted: false } }),
+    prisma.testRun.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      include: { suite: { select: { name: true } } },
+    }),
+    prisma.milestone.count({ where: { projectId } }),
+    prisma.testPlan.count({ where: { projectId } }),
+    // Scoped to every active (non-completed) run in the project, NOT just the 10 most recent
+    // ones fetched above — a real, confirmed bug: this dashboard's totals/passRate used to be
+    // computed from whatever the 10-recent-runs-regardless-of-status list happened to contain,
+    // which could include closed runs and silently disagreed with the cross-project dashboard's
+    // "active runs only" scoping for the identical project (reproduced: 50% vs 0% on the same
+    // data). This now matches that same scoping, and root CLAUDE.md's own claim that it does.
+    prisma.runCase.groupBy({
+      by: ['status'],
+      where: { run: { projectId, isCompleted: false } },
+      _count: { status: true },
+    }),
+  ]);
+
+  const runSummaries = await Promise.all(
+    runs.map(async (run) => {
+      const grouped = await prisma.runCase.groupBy({
+        by: ['status'],
+        where: { runId: run.id },
+        _count: { status: true },
+      });
+      const counts = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
+      for (const row of grouped) counts[row.status as keyof typeof counts] = row._count.status;
+      const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+      return {
+        id: run.id,
+        name: run.name,
+        suiteName: run.suite?.name ?? null,
+        isCompleted: run.isCompleted,
+        createdAt: run.createdAt,
+        counts,
+        total,
+      };
+    }),
+  );
+
+  const totals = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
+  for (const row of activeGrouped) totals[row.status as keyof typeof totals] = row._count.status;
+  const totalResults = Object.values(totals).reduce((sum, n) => sum + n, 0);
+  const passRate = totalResults > 0 ? totals.PASSED / totalResults : null;
+
+  return {
+    counts: { suites: suiteCount, cases: caseCount, milestones: milestoneCount, plans: planCount, runs: runs.length },
+    passRate,
+    totals,
+    recentRuns: runSummaries,
+  };
+}
+
 dashboardRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const projectId = req.params.projectId;
-
-    const [suiteCount, caseCount, runs, milestoneCount, planCount, activeGrouped] = await Promise.all([
-      prisma.suite.count({ where: { projectId } }),
-      prisma.testCase.count({ where: { suite: { projectId }, isDeleted: false } }),
-      prisma.testRun.findMany({
-        where: { projectId },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        include: { suite: { select: { name: true } } },
-      }),
-      prisma.milestone.count({ where: { projectId } }),
-      prisma.testPlan.count({ where: { projectId } }),
-      // Scoped to every active (non-completed) run in the project, NOT just the 10 most recent
-      // ones fetched above — a real, confirmed bug: this dashboard's totals/passRate used to be
-      // computed from whatever the 10-recent-runs-regardless-of-status list happened to contain,
-      // which could include closed runs and silently disagreed with the cross-project dashboard's
-      // "active runs only" scoping for the identical project (reproduced: 50% vs 0% on the same
-      // data). This now matches that same scoping, and root CLAUDE.md's own claim that it does.
-      prisma.runCase.groupBy({
-        by: ['status'],
-        where: { run: { projectId, isCompleted: false } },
-        _count: { status: true },
-      }),
-    ]);
-
-    const runSummaries = await Promise.all(
-      runs.map(async (run) => {
-        const grouped = await prisma.runCase.groupBy({
-          by: ['status'],
-          where: { runId: run.id },
-          _count: { status: true },
-        });
-        const counts = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
-        for (const row of grouped) counts[row.status as keyof typeof counts] = row._count.status;
-        const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
-        return {
-          id: run.id,
-          name: run.name,
-          suiteName: run.suite?.name ?? null,
-          isCompleted: run.isCompleted,
-          createdAt: run.createdAt,
-          counts,
-          total,
-        };
-      }),
-    );
-
-    const totals = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
-    for (const row of activeGrouped) totals[row.status as keyof typeof totals] = row._count.status;
-    const totalResults = Object.values(totals).reduce((sum, n) => sum + n, 0);
-    const passRate = totalResults > 0 ? totals.PASSED / totalResults : null;
-
-    res.json({
-      counts: { suites: suiteCount, cases: caseCount, milestones: milestoneCount, plans: planCount, runs: runs.length },
-      passRate,
-      totals,
-      recentRuns: runSummaries,
-    });
+    const data = await getOrSetCache(`dashboard:${projectId}`, DASHBOARD_CACHE_TTL_MS, () => buildProjectDashboard(projectId));
+    res.json(data);
   }),
 );
 
@@ -91,65 +111,70 @@ dashboardRouter.get(
 export const crossProjectDashboardRouter = Router();
 crossProjectDashboardRouter.use(requireAuth);
 
+async function buildCrossProjectDashboard() {
+  const projects = await prisma.project.findMany({ orderBy: { name: 'asc' } });
+
+  const perProject = await Promise.all(
+    projects.map(async (p) => {
+      const [suiteCount, caseCount, runCount, milestoneCount, grouped] = await Promise.all([
+        prisma.suite.count({ where: { projectId: p.id } }),
+        prisma.testCase.count({ where: { suite: { projectId: p.id }, isDeleted: false } }),
+        prisma.testRun.count({ where: { projectId: p.id } }),
+        prisma.milestone.count({ where: { projectId: p.id } }),
+        prisma.runCase.groupBy({
+          by: ['status'],
+          where: { run: { projectId: p.id, isCompleted: false } },
+          _count: { status: true },
+        }),
+      ]);
+      const statusCounts = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
+      for (const row of grouped) statusCounts[row.status as keyof typeof statusCounts] = row._count.status;
+      const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
+
+      return {
+        id: p.id,
+        name: p.name,
+        isCompleted: p.isCompleted,
+        counts: { suites: suiteCount, cases: caseCount, runs: runCount, milestones: milestoneCount },
+        statusCounts,
+        total,
+      };
+    }),
+  );
+
+  const totals = perProject.reduce(
+    (acc, p) => {
+      acc.PASSED += p.statusCounts.PASSED;
+      acc.FAILED += p.statusCounts.FAILED;
+      acc.BLOCKED += p.statusCounts.BLOCKED;
+      acc.RETEST += p.statusCounts.RETEST;
+      acc.UNTESTED += p.statusCounts.UNTESTED;
+      return acc;
+    },
+    { PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0, UNTESTED: 0 },
+  );
+  const totalResults = Object.values(totals).reduce((sum, n) => sum + n, 0);
+  const passRate = totalResults > 0 ? totals.PASSED / totalResults : null;
+
+  return {
+    counts: {
+      projects: projects.length,
+      suites: perProject.reduce((sum, p) => sum + p.counts.suites, 0),
+      cases: perProject.reduce((sum, p) => sum + p.counts.cases, 0),
+      runs: perProject.reduce((sum, p) => sum + p.counts.runs, 0),
+      milestones: perProject.reduce((sum, p) => sum + p.counts.milestones, 0),
+    },
+    totals,
+    passRate,
+    projects: perProject,
+  };
+}
+
 crossProjectDashboardRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
-    const projects = await prisma.project.findMany({ orderBy: { name: 'asc' } });
-
-    const perProject = await Promise.all(
-      projects.map(async (p) => {
-        const [suiteCount, caseCount, runCount, milestoneCount, grouped] = await Promise.all([
-          prisma.suite.count({ where: { projectId: p.id } }),
-          prisma.testCase.count({ where: { suite: { projectId: p.id }, isDeleted: false } }),
-          prisma.testRun.count({ where: { projectId: p.id } }),
-          prisma.milestone.count({ where: { projectId: p.id } }),
-          prisma.runCase.groupBy({
-            by: ['status'],
-            where: { run: { projectId: p.id, isCompleted: false } },
-            _count: { status: true },
-          }),
-        ]);
-        const statusCounts = { UNTESTED: 0, PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0 };
-        for (const row of grouped) statusCounts[row.status as keyof typeof statusCounts] = row._count.status;
-        const total = Object.values(statusCounts).reduce((sum, n) => sum + n, 0);
-
-        return {
-          id: p.id,
-          name: p.name,
-          isCompleted: p.isCompleted,
-          counts: { suites: suiteCount, cases: caseCount, runs: runCount, milestones: milestoneCount },
-          statusCounts,
-          total,
-        };
-      }),
-    );
-
-    const totals = perProject.reduce(
-      (acc, p) => {
-        acc.PASSED += p.statusCounts.PASSED;
-        acc.FAILED += p.statusCounts.FAILED;
-        acc.BLOCKED += p.statusCounts.BLOCKED;
-        acc.RETEST += p.statusCounts.RETEST;
-        acc.UNTESTED += p.statusCounts.UNTESTED;
-        return acc;
-      },
-      { PASSED: 0, FAILED: 0, BLOCKED: 0, RETEST: 0, UNTESTED: 0 },
-    );
-    const totalResults = Object.values(totals).reduce((sum, n) => sum + n, 0);
-    const passRate = totalResults > 0 ? totals.PASSED / totalResults : null;
-
-    res.json({
-      counts: {
-        projects: projects.length,
-        suites: perProject.reduce((sum, p) => sum + p.counts.suites, 0),
-        cases: perProject.reduce((sum, p) => sum + p.counts.cases, 0),
-        runs: perProject.reduce((sum, p) => sum + p.counts.runs, 0),
-        milestones: perProject.reduce((sum, p) => sum + p.counts.milestones, 0),
-      },
-      totals,
-      passRate,
-      projects: perProject,
-    });
+    const data = await getOrSetCache('cross-dashboard', DASHBOARD_CACHE_TTL_MS, buildCrossProjectDashboard);
+    res.json(data);
   }),
 );
 
@@ -160,8 +185,23 @@ defectsRouter.use(requireAuth);
 defectsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const runCases = await fetchLatestResultPerRunCase({ run: { projectId: req.params.projectId } });
-    res.json({ defects: aggregateDefects(runCases) });
+    // Previously scanned every RunCase in every run the project has ever had, with no scoping —
+    // the one report in this whole family that skipped the `resolveRunIds` convention every
+    // sibling Defects/Results report already uses (explicit ?runIds=, else the 25 most recent
+    // runs). Brought in line with that convention: same default, same opt-in to a specific set.
+    const query = req.query as Record<string, unknown>;
+    const requestedRunIds = splitCsvParam(query.runIds);
+    const runs = await resolveRunIds(req.params.projectId, requestedRunIds);
+    const runCases = await fetchLatestResultPerRunCase({ runId: { in: runs.map((r) => r.id) } });
+    const allDefects = aggregateDefects(runCases).map((d) => ({
+      ...d,
+      casesTotal: d.cases.length,
+      cases: d.cases.slice(0, MAX_CASES_PER_DEFECT),
+    }));
+
+    const pagination = parsePagination(query, { defaultPageSize: 50 });
+    const pageOfDefects = allDefects.slice(pagination.skip, pagination.skip + pagination.take);
+    res.json({ defects: pageOfDefects, runs, ...paginationMeta(allDefects.length, pagination) });
   }),
 );
 

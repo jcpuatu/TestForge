@@ -12,6 +12,7 @@ import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
 import { defectsToJiraCsv } from './defectsCsv';
 import { bulkAssignSchema, bulkResultSchema } from '../results/schema';
 import { logAudit } from '../../lib/audit';
+import { paginationMeta, parsePagination } from '../../lib/pagination';
 
 const MANAGE_ROLES = ['ADMIN', 'LEAD'] as const;
 const WRITE_ROLES = ['ADMIN', 'LEAD', 'TESTER'] as const;
@@ -23,16 +24,24 @@ runsNestedRouter.use(requireAuth);
 runsNestedRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const runs = await prisma.testRun.findMany({
-      where: { projectId: req.params.projectId },
-      orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { runCases: true } }, suite: { select: { name: true } } },
-    });
+    const where = { projectId: req.params.projectId };
+    const pagination = parsePagination(req.query as Record<string, unknown>, { defaultPageSize: 50 });
+    const [runs, total] = await Promise.all([
+      prisma.testRun.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { _count: { select: { runCases: true } }, suite: { select: { name: true } } },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      prisma.testRun.count({ where }),
+    ]);
     // Per-run status breakdown so the Runs list can show a pass/fail bar without a click-through
     // per run (previously this list showed less status info than the Overview dashboard's own
     // "Recent runs" widget, which already computes this the same way for its top-10 slice).
+    // Only computed for the current page's rows now, not the whole project's run history.
     const summaries = await Promise.all(runs.map((run) => getRunSummary(run.id)));
-    res.json({ runs: runs.map((run, i) => ({ ...run, ...summaries[i] })) });
+    res.json({ runs: runs.map((run, i) => ({ ...run, ...summaries[i] })), ...paginationMeta(total, pagination) });
   }),
 );
 

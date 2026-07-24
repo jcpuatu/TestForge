@@ -18,9 +18,10 @@ export function DefectsTab() {
     <div>
       <h1 className="mb-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">Defects</h1>
       <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-        Every defect ID/link ever entered on a test result in this project, rolled up by how many test cases still
-        reference it. This is not a real Jira connection (see the API Keys / docs for what a real integration would
-        need) — it's just aggregating whatever text testers have typed into the Defect IDs field.
+        Defect IDs/links entered on test results across this project's 25 most recent runs, rolled up by how many
+        test cases still reference each one. This is not a real Jira connection (see the API Keys / docs for what a
+        real integration would need) — it's just aggregating whatever text testers have typed into the Defect IDs
+        field.
       </p>
 
       {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}

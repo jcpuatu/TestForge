@@ -1,4 +1,5 @@
 import { apiFetch } from '../lib/apiClient';
+import type { PaginationMeta } from './pagination';
 
 export type WebhookEventType = 'RUN_COMPLETED' | 'RUN_CREATED' | 'CASE_CREATED';
 
@@ -36,6 +37,8 @@ export function testWebhook(id: string) {
   return apiFetch<{ status: string }>(`/webhooks/${id}/test`, { method: 'POST' });
 }
 
-export function listDeliveries(id: string) {
-  return apiFetch<{ deliveries: WebhookDelivery[] }>(`/webhooks/${id}/deliveries`);
+export function listDeliveries(id: string, page = 1, pageSize?: number) {
+  const params = new URLSearchParams({ page: String(page) });
+  if (pageSize) params.set('pageSize', String(pageSize));
+  return apiFetch<{ deliveries: WebhookDelivery[] } & PaginationMeta>(`/webhooks/${id}/deliveries?${params.toString()}`);
 }

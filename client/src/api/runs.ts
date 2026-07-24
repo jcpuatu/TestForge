@@ -1,5 +1,6 @@
 import { apiFetch } from '../lib/apiClient';
 import type { BddLine, CaseTemplate, Priority } from './types';
+import type { PaginationMeta } from './pagination';
 
 export interface TestRun {
   id: string;
@@ -75,8 +76,10 @@ export interface Result {
   enteredBy: { id: string; name: string } | null;
 }
 
-export function listRuns(projectId: string) {
-  return apiFetch<{ runs: TestRun[] }>(`/projects/${projectId}/runs`);
+export function listRuns(projectId: string, page = 1, pageSize?: number) {
+  const params = new URLSearchParams({ page: String(page) });
+  if (pageSize) params.set('pageSize', String(pageSize));
+  return apiFetch<{ runs: TestRun[] } & PaginationMeta>(`/projects/${projectId}/runs?${params.toString()}`);
 }
 
 export function createRun(

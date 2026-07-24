@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import * as runsApi from '../../api/runs';
 import * as usersApi from '../../api/users';
@@ -9,6 +9,7 @@ import { Button } from '../../components/Button';
 import { Badge } from '../../components/Badge';
 import { StackedStatusBar } from '../../components/StackedStatusBar';
 import { Field, Input, Label, Select } from '../../components/Input';
+import { LoadMoreButton } from '../../components/LoadMoreButton';
 import { ApiError } from '../../lib/apiClient';
 
 type Context = { project: Project & { suites: Suite[] } };
@@ -26,7 +27,14 @@ export function RunsListPage() {
   const [assignedToId, setAssignedToId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const runsQuery = useQuery({ queryKey: ['projects', projectId, 'runs'], queryFn: () => runsApi.listRuns(projectId!) });
+  const runsQuery = useInfiniteQuery({
+    queryKey: ['projects', projectId, 'runs'],
+    queryFn: ({ pageParam }) => runsApi.listRuns(projectId!, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
+  });
+  const allRuns = runsQuery.data?.pages.flatMap((p) => p.runs) ?? [];
+  const runsLastPage = runsQuery.data?.pages[runsQuery.data.pages.length - 1];
   const directoryQuery = useQuery({ queryKey: ['users', 'directory'], queryFn: usersApi.listUserDirectory });
 
   const createRun = useMutation({
@@ -92,7 +100,7 @@ export function RunsListPage() {
       )}
 
       <div className="space-y-2">
-        {runsQuery.data?.runs.map((run) => {
+        {allRuns.map((run) => {
           const total = run.total ?? 0;
           const passRate = total > 0 && run.counts ? Math.round((run.counts.PASSED / total) * 100) : null;
           return (
@@ -117,8 +125,17 @@ export function RunsListPage() {
             </Link>
           );
         })}
-        {runsQuery.data?.runs.length === 0 && <p className="text-sm text-slate-500 dark:text-slate-400">No test runs yet.</p>}
+        {allRuns.length === 0 && !runsQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">No test runs yet.</p>}
       </div>
+      {runsLastPage && (
+        <LoadMoreButton
+          loadedCount={allRuns.length}
+          total={runsLastPage.total}
+          hasMore={runsQuery.hasNextPage ?? false}
+          isFetching={runsQuery.isFetchingNextPage}
+          onClick={() => runsQuery.fetchNextPage()}
+        />
+      )}
     </div>
   );
 }

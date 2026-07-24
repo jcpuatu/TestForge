@@ -421,3 +421,53 @@ describe('cross-suite sectionId validation', () => {
     expect(bulkMoved.status).toBe(400);
   });
 });
+
+// Regression tests: both case list endpoints returned every matching row unbounded, with no way
+// to fetch a large suite/section a page at a time.
+describe('case list pagination', () => {
+  it('paginates the suite-wide case list and reports accurate total/hasMore', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Pagination Suite Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+    for (const title of ['A', 'B', 'C', 'D', 'E']) {
+      await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth(adminToken)).send({ title });
+    }
+
+    const page1 = await request(app).get(`/api/v1/suites/${suite.body.suite.id}/cases?page=1&pageSize=2`).set(auth(adminToken));
+    expect(page1.body.cases).toHaveLength(2);
+    expect(page1.body).toMatchObject({ total: 5, page: 1, pageSize: 2, hasMore: true });
+
+    const page3 = await request(app).get(`/api/v1/suites/${suite.body.suite.id}/cases?page=3&pageSize=2`).set(auth(adminToken));
+    expect(page3.body.cases).toHaveLength(1);
+    expect(page3.body).toMatchObject({ total: 5, page: 3, pageSize: 2, hasMore: false });
+
+    // Pages don't overlap.
+    const page1Ids = page1.body.cases.map((c: { id: string }) => c.id);
+    const page3Ids = page3.body.cases.map((c: { id: string }) => c.id);
+    expect(page1Ids.some((id: string) => page3Ids.includes(id))).toBe(false);
+  });
+
+  it('paginates the section-scoped case list the same way', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Pagination Section Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+    for (const title of ['A', 'B', 'C']) {
+      await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth(adminToken)).send({ title });
+    }
+
+    const res = await request(app).get(`/api/v1/sections/${section.body.section.id}/cases?page=1&pageSize=2`).set(auth(adminToken));
+    expect(res.body.cases).toHaveLength(2);
+    expect(res.body).toMatchObject({ total: 3, page: 1, pageSize: 2, hasMore: true });
+  });
+
+  it('defaults to returning everything for a small list, unchanged from pre-pagination behavior', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth(adminToken)).send({ name: `Pagination Default Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth(adminToken)).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth(adminToken)).send({ name: 'Section' });
+    await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth(adminToken)).send({ title: 'Only case' });
+
+    const res = await request(app).get(`/api/v1/suites/${suite.body.suite.id}/cases`).set(auth(adminToken));
+    expect(res.body.cases).toHaveLength(1);
+    expect(res.body.hasMore).toBe(false);
+  });
+});

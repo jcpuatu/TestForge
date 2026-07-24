@@ -104,6 +104,33 @@ describe('defects rollup', () => {
     expect(rollup.body.defects.some((d: { id: string }) => d.id === 'BUG-600')).toBe(true);
     expect(rollup.body.defects.some((d: { id: string }) => d.id === 'BUG-601')).toBe(true);
   });
+
+  // Regression test: this was the one report in the whole Defects/Results family that ignored
+  // run-scoping entirely -- an unbounded scan over every RunCase the project has ever had, unlike
+  // every sibling report which resolves scope via resolveRunIds (explicit ?runIds=, else the 25
+  // most recent runs). Now matches that convention.
+  it('scopes to an explicit runIds selection instead of scanning the whole project', async () => {
+    const { run: runA, tests: testsA } = await seedRunWithTwoCases('Run Scope A');
+    const { tests: testsB } = await seedRunWithTwoCases('Run Scope B');
+    await request(app).post(`/api/v1/tests/${testsA[0].id}/results`).set(auth()).send({ status: 'FAILED', defects: 'BUG-SCOPE-A' });
+    await request(app).post(`/api/v1/tests/${testsB[0].id}/results`).set(auth()).send({ status: 'FAILED', defects: 'BUG-SCOPE-B' });
+
+    const scoped = await request(app).get(`/api/v1/projects/${projectId}/defects?runIds=${runA.id}`).set(auth());
+    const ids = scoped.body.defects.map((d: { id: string }) => d.id);
+    expect(ids).toContain('BUG-SCOPE-A');
+    expect(ids).not.toContain('BUG-SCOPE-B');
+    expect(scoped.body.runs).toHaveLength(1);
+    expect(scoped.body.runs[0].id).toBe(runA.id);
+  });
+
+  it('caps how many case occurrences one defect entry carries, exposing the true count via casesTotal', async () => {
+    const { tests } = await seedRunWithTwoCases('Run Cap Test');
+    await request(app).post(`/api/v1/tests/${tests[0].id}/results`).set(auth()).send({ status: 'FAILED', defects: 'BUG-CAP' });
+
+    const rollup = await request(app).get(`/api/v1/projects/${projectId}/defects`).set(auth());
+    const entry = rollup.body.defects.find((d: { id: string }) => d.id === 'BUG-CAP');
+    expect(entry.casesTotal).toBe(entry.cases.length);
+  });
 });
 
 describe('defects CSV export', () => {

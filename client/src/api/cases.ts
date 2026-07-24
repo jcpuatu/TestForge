@@ -1,5 +1,6 @@
 import { apiFetch } from '../lib/apiClient';
 import type { BddLine, CaseStep, CaseTemplate, CaseType, Priority, TestCase } from './types';
+import type { PaginationMeta } from './pagination';
 
 export interface CaseInput {
   title: string;
@@ -44,7 +45,7 @@ export function isFilterActive(filter: CaseFilter): boolean {
   );
 }
 
-export function listCasesBySuite(suiteId: string, filter?: CaseFilter) {
+export function listCasesBySuite(suiteId: string, filter?: CaseFilter, page = 1, pageSize?: number) {
   const params = new URLSearchParams();
   if (filter?.sectionIds?.length) params.set('sectionIds', filter.sectionIds.join(','));
   if (filter?.priorities?.length) params.set('priorities', filter.priorities.join(','));
@@ -57,17 +58,24 @@ export function listCasesBySuite(suiteId: string, filter?: CaseFilter) {
   if (filter?.sortBy) params.set('sortBy', filter.sortBy);
   if (filter?.sortDir) params.set('sortDir', filter.sortDir);
   if (filter?.deleted) params.set('deleted', 'true');
-  const query = params.toString();
-  return apiFetch<{ cases: TestCase[] }>(`/suites/${suiteId}/cases${query ? `?${query}` : ''}`);
+  params.set('page', String(page));
+  if (pageSize) params.set('pageSize', String(pageSize));
+  return apiFetch<{ cases: TestCase[] } & PaginationMeta>(`/suites/${suiteId}/cases?${params.toString()}`);
 }
 
-export function listCasesBySection(sectionId: string, opts?: { deleted?: boolean; sortBy?: CaseFilter['sortBy']; sortDir?: CaseFilter['sortDir'] }) {
+export function listCasesBySection(
+  sectionId: string,
+  opts?: { deleted?: boolean; sortBy?: CaseFilter['sortBy']; sortDir?: CaseFilter['sortDir'] },
+  page = 1,
+  pageSize?: number,
+) {
   const params = new URLSearchParams();
   if (opts?.deleted) params.set('deleted', 'true');
   if (opts?.sortBy) params.set('sortBy', opts.sortBy);
   if (opts?.sortDir) params.set('sortDir', opts.sortDir);
-  const query = params.toString();
-  return apiFetch<{ cases: TestCase[] }>(`/sections/${sectionId}/cases${query ? `?${query}` : ''}`);
+  params.set('page', String(page));
+  if (pageSize) params.set('pageSize', String(pageSize));
+  return apiFetch<{ cases: TestCase[] } & PaginationMeta>(`/sections/${sectionId}/cases?${params.toString()}`);
 }
 
 export function getCase(id: string) {

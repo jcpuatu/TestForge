@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GripVertical, Pencil, Trash2 } from 'lucide-react';
 import { DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
@@ -27,6 +27,7 @@ import { CaseHistoryModal } from './CaseHistoryModal';
 import { CaseAttachments } from './CaseAttachments';
 import { CsvExportDialog } from './CsvExportDialog';
 import { PrintButton } from '../../components/PrintButton';
+import { LoadMoreButton } from '../../components/LoadMoreButton';
 import { ApiError } from '../../lib/apiClient';
 import { downloadCasesCsv, downloadFeatureFile, importCasesCsv, importFeatureFile } from '../../api/csv';
 
@@ -132,20 +133,29 @@ export function SuiteDetailPage() {
 
   const activeSectionId = selectedSectionId ?? sections[0]?.id ?? null;
 
-  const sectionCasesQuery = useQuery({
+  // Load More (not full page-number pagination): each page's rows APPEND to the same flat list
+  // rather than replacing it, so bulk-select/drag-and-drop keep working against every case
+  // that's been loaded so far, not just whichever page is "current" — see client/CLAUDE.md.
+  const sectionCasesQuery = useInfiniteQuery({
     queryKey: ['sections', activeSectionId, 'cases', showDeleted, caseFilter.sortBy, caseFilter.sortDir],
-    queryFn: () =>
-      casesApi.listCasesBySection(activeSectionId!, { deleted: showDeleted, sortBy: caseFilter.sortBy, sortDir: caseFilter.sortDir }),
+    queryFn: ({ pageParam }) =>
+      casesApi.listCasesBySection(activeSectionId!, { deleted: showDeleted, sortBy: caseFilter.sortBy, sortDir: caseFilter.sortDir }, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     enabled: !!activeSectionId && !filtering,
   });
 
-  const filteredCasesQuery = useQuery({
+  const filteredCasesQuery = useInfiniteQuery({
     queryKey: ['suites', suiteId, 'cases', 'filtered', caseFilter, showDeleted],
-    queryFn: () => casesApi.listCasesBySuite(suiteId!, { ...caseFilter, deleted: showDeleted }),
+    queryFn: ({ pageParam }) => casesApi.listCasesBySuite(suiteId!, { ...caseFilter, deleted: showDeleted }, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     enabled: !!suiteId && filtering,
   });
 
   const casesQuery = filtering ? filteredCasesQuery : sectionCasesQuery;
+  const allCases = useMemo(() => casesQuery.data?.pages.flatMap((p) => p.cases) ?? [], [casesQuery.data]);
+  const casesLastPage = casesQuery.data?.pages[casesQuery.data.pages.length - 1];
 
   // Clear any bulk-selection whenever the visible case list changes to a different set —
   // otherwise a stale selection from a previous section/filter view could get bulk-edited
@@ -482,7 +492,7 @@ export function SuiteDetailPage() {
       <DragOverlay>
         {draggingCaseId &&
           (() => {
-            const draggedCase = casesQuery.data?.cases.find((c) => c.id === draggingCaseId);
+            const draggedCase = allCases.find((c) => c.id === draggingCaseId);
             const count = selectedCaseIds.has(draggingCaseId) ? selectedCaseIds.size : 1;
             return (
               <div className="rounded-md border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 shadow-lg">
@@ -632,7 +642,7 @@ export function SuiteDetailPage() {
               )}
 
               <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-                {casesQuery.data?.cases.map((testCase) => (
+                {allCases.map((testCase) => (
                   <div key={testCase.id} className="p-3">
                     <div className="flex items-center justify-between">
                       {canWriteCases && <CaseDragHandle caseId={testCase.id} disabled={showDeleted} />}
@@ -836,12 +846,21 @@ export function SuiteDetailPage() {
                     )}
                   </div>
                 ))}
-                {casesQuery.data?.cases.length === 0 && (
+                {allCases.length === 0 && !casesQuery.isLoading && (
                   <p className="p-3 text-sm text-slate-500 dark:text-slate-400">
                     {showDeleted ? 'No deleted test cases in this section.' : 'No test cases in this section yet.'}
                   </p>
                 )}
               </div>
+              {casesLastPage && (
+                <LoadMoreButton
+                  loadedCount={allCases.length}
+                  total={casesLastPage.total}
+                  hasMore={casesQuery.hasNextPage ?? false}
+                  isFetching={casesQuery.isFetchingNextPage}
+                  onClick={() => casesQuery.fetchNextPage()}
+                />
+              )}
             </>
           ) : (
             <p className="text-sm text-slate-500 dark:text-slate-400">Create a section to start adding test cases.</p>

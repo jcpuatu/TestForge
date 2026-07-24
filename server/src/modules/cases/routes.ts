@@ -21,6 +21,7 @@ import { setCaseSharedSteps } from '../sharedSteps/service';
 import { BadRequestError } from '../../lib/errors';
 import { logAudit } from '../../lib/audit';
 import { dispatchWebhookEvent } from '../../lib/webhook-dispatcher';
+import { paginationMeta, parsePagination } from '../../lib/pagination';
 
 const CASE_INCLUDE = { ...CASE_LABELS_INCLUDE, ...CASE_SHARED_STEPS_INCLUDE };
 
@@ -34,8 +35,12 @@ casesBySuiteRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const { where, orderBy } = buildCaseListQuery(req.params.suiteId, req.query as Record<string, unknown>);
-    const cases = await prisma.testCase.findMany({ where, orderBy, include: CASE_INCLUDE });
-    res.json({ cases: cases.map(toPublicCase) });
+    const pagination = parsePagination(req.query as Record<string, unknown>, { defaultPageSize: 100 });
+    const [cases, total] = await Promise.all([
+      prisma.testCase.findMany({ where, orderBy, include: CASE_INCLUDE, skip: pagination.skip, take: pagination.take }),
+      prisma.testCase.count({ where }),
+    ]);
+    res.json({ cases: cases.map(toPublicCase), ...paginationMeta(total, pagination) });
   }),
 );
 
@@ -259,12 +264,19 @@ casesBySectionRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const { deleted } = req.query;
-    const cases = await prisma.testCase.findMany({
-      where: { sectionId: req.params.sectionId, isDeleted: deleted === 'true' },
-      orderBy: buildCaseSort(req.query as Record<string, unknown>),
-      include: CASE_INCLUDE,
-    });
-    res.json({ cases: cases.map(toPublicCase) });
+    const where = { sectionId: req.params.sectionId, isDeleted: deleted === 'true' };
+    const pagination = parsePagination(req.query as Record<string, unknown>, { defaultPageSize: 100 });
+    const [cases, total] = await Promise.all([
+      prisma.testCase.findMany({
+        where,
+        orderBy: buildCaseSort(req.query as Record<string, unknown>),
+        include: CASE_INCLUDE,
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+      prisma.testCase.count({ where }),
+    ]);
+    res.json({ cases: cases.map(toPublicCase), ...paginationMeta(total, pagination) });
   }),
 );
 

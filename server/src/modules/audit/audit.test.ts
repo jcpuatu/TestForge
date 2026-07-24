@@ -82,4 +82,25 @@ describe('audit log', () => {
     const res = await feed(projectId);
     expect(res.body.entries).toHaveLength(0);
   });
+
+  // Regression test: this endpoint had a hard `take: 200` with no `skip` -- a long-lived active
+  // project eventually exceeds 200 logged actions, and everything before that was permanently
+  // unreachable through this endpoint.
+  it('paginates via real skip/take instead of a fixed cap', async () => {
+    const projectId = await seedProject();
+    for (const name of ['Label A', 'Label B']) {
+      const label = await request(app).post(`/api/v1/projects/${projectId}/labels`).set(auth()).send({ name });
+      await request(app).delete(`/api/v1/labels/${label.body.label.id}`).set(auth());
+    }
+    // 2 labels x (create is unlogged, delete is logged) = 2 entries; renaming isn't needed here,
+    // just need >1 entries to prove skip/take actually moves the window.
+    const page1 = await request(app).get(`/api/v1/projects/${projectId}/audit-log?page=1&pageSize=1`).set(auth());
+    expect(page1.body.entries).toHaveLength(1);
+    expect(page1.body).toMatchObject({ total: 2, page: 1, pageSize: 1, hasMore: true });
+
+    const page2 = await request(app).get(`/api/v1/projects/${projectId}/audit-log?page=2&pageSize=1`).set(auth());
+    expect(page2.body.entries).toHaveLength(1);
+    expect(page2.body.hasMore).toBe(false);
+    expect(page2.body.entries[0].id).not.toBe(page1.body.entries[0].id);
+  });
 });

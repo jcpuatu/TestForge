@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import * as auditApi from '../../api/audit';
+import { LoadMoreButton } from '../../components/LoadMoreButton';
 
 const ACTION_LABELS: Record<string, string> = {
   LABEL_RENAMED: 'Label renamed',
@@ -19,11 +20,15 @@ const ACTION_LABELS: Record<string, string> = {
 
 export function ActivityTab() {
   const { projectId } = useParams<{ projectId: string }>();
-  const { data, isLoading } = useQuery({
+  const query = useInfiniteQuery({
     queryKey: ['projects', projectId, 'audit-log'],
-    queryFn: () => auditApi.listAuditLog(projectId!),
+    queryFn: ({ pageParam }) => auditApi.listAuditLog(projectId!, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     enabled: !!projectId,
   });
+  const entries = query.data?.pages.flatMap((p) => p.entries) ?? [];
+  const lastPage = query.data?.pages[query.data.pages.length - 1];
 
   return (
     <div>
@@ -33,10 +38,10 @@ export function ActivityTab() {
         deletion, milestone/plan/run date changes, and run closures. Not a log of every change in the app.
       </p>
 
-      {isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
 
       <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-        {data?.entries.map((e) => (
+        {entries.map((e) => (
           <div key={e.id} className="flex items-start justify-between gap-3 p-3 text-sm">
             <div>
               <span className="font-medium text-slate-800 dark:text-slate-200">{ACTION_LABELS[e.action] ?? e.action}</span>
@@ -48,8 +53,17 @@ export function ActivityTab() {
             </div>
           </div>
         ))}
-        {data?.entries.length === 0 && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No activity logged yet.</p>}
+        {entries.length === 0 && !query.isLoading && <p className="p-4 text-sm text-slate-500 dark:text-slate-400">No activity logged yet.</p>}
       </div>
+      {lastPage && (
+        <LoadMoreButton
+          loadedCount={entries.length}
+          total={lastPage.total}
+          hasMore={query.hasNextPage ?? false}
+          isFetching={query.isFetchingNextPage}
+          onClick={() => query.fetchNextPage()}
+        />
+      )}
     </div>
   );
 }
