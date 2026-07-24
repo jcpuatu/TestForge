@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../lib/asyncHandler';
 import { requireAuth } from '../../middleware/requireAuth';
+import { loginRateLimiter } from '../../middleware/rateLimit';
 import { prisma } from '../../config/prisma-client';
 import { UnauthorizedError } from '../../lib/errors';
 import { loginSchema } from './schema';
@@ -14,6 +15,7 @@ function toPublicUser(user: { id: string; email: string; name: string; role: str
 
 authRouter.post(
   '/login',
+  loginRateLimiter,
   asyncHandler(async (req, res) => {
     const { email, password } = loginSchema.parse(req.body);
     const { user, accessToken } = await authService.login(email, password, res, req.ip);

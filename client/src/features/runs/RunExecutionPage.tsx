@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bug, ChevronDown, ChevronRight, Filter } from 'lucide-react';
@@ -215,6 +215,20 @@ function TestRow({
   const [defects, setDefects] = useState('');
   const [showDraft, setShowDraft] = useState(false);
   const [showQuickAdvanceMenu, setShowQuickAdvanceMenu] = useState(false);
+  const quickAdvanceRef = useRef<HTMLDivElement>(null);
+  // Closes the quick-advance menu on a click anywhere outside it — previously the only way to
+  // close it was picking an option or re-clicking the chevron, which felt broken next to every
+  // other dropdown/menu convention in the app.
+  useEffect(() => {
+    if (!showQuickAdvanceMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (quickAdvanceRef.current && !quickAdvanceRef.current.contains(e.target as Node)) {
+        setShowQuickAdvanceMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showQuickAdvanceMenu]);
   const [submitAssigneeId, setSubmitAssigneeId] = useState(test.assignedTo?.id ?? '');
   // Resyncs whenever the server's own view of the assignee changes (a successful reassign
   // refetches `test`, or the DB simply never changed because a reassign attempt failed) — without
@@ -225,8 +239,19 @@ function TestRow({
   }, [test.assignedTo?.id]);
   const [version, setVersion] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState('');
-  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null);
-  const [timerTick, setTimerTick] = useState(0);
+  const timerStorageKey = `testforge:timer:${test.id}`;
+  // Resumes a timer that was left running when this row last unmounted (navigating away from the
+  // run and back, e.g.) — previously a running timer was silently discarded on remount with zero
+  // warning, the only trace being a start time that no longer existed anywhere once the component
+  // state was gone.
+  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(() => {
+    const stored = sessionStorage.getItem(timerStorageKey);
+    return stored ? Number(stored) : null;
+  });
+  // Only the setter is used — this state exists purely to force a re-render every second (via
+  // the interval below) so `liveSeconds` recomputes against the current time; its own value is
+  // never read, so the destructured value binding is elided rather than declared-and-ignored.
+  const [, setTimerTick] = useState(0);
 
   const resultsQuery = useQuery({
     queryKey: ['tests', test.id, 'results'],
@@ -244,10 +269,13 @@ function TestRow({
 
   function toggleTimer() {
     if (timerStartedAt === null) {
-      setTimerStartedAt(Date.now());
+      const startedAt = Date.now();
+      setTimerStartedAt(startedAt);
+      sessionStorage.setItem(timerStorageKey, String(startedAt));
     } else {
       setElapsedSeconds(String(Math.floor((Date.now() - timerStartedAt) / 1000)));
       setTimerStartedAt(null);
+      sessionStorage.removeItem(timerStorageKey);
     }
   }
 
@@ -255,11 +283,16 @@ function TestRow({
 
   const submitResult = useMutation({
     mutationFn: (status: ResultStatus) => {
+      // If the timer is still running at submit time, capture its live value instead of the
+      // frozen `elapsedSeconds` string, which is only ever populated when the timer is explicitly
+      // stopped — otherwise submitting a result without remembering to click "Stop timer" first
+      // (a more common path than the timer surviving a mid-session navigation away and back)
+      // silently discarded the elapsed time entirely.
       // Clamped client-side (not just relying on the server's own cap) so a stray negative or
       // absurdly large typed value doesn't round-trip to a rejected request — this field isn't
       // inside a <form>, so the Input's min/max attributes above are display hints only and are
       // never enforced by a native submit event.
-      const rawSeconds = elapsedSeconds ? Number(elapsedSeconds) : NaN;
+      const rawSeconds = timerStartedAt !== null ? Math.floor((Date.now() - timerStartedAt) / 1000) : elapsedSeconds ? Number(elapsedSeconds) : NaN;
       const elapsedMs = Number.isFinite(rawSeconds) ? Math.min(Math.max(rawSeconds, 0), 24 * 60 * 60) * 1000 : undefined;
       return runsApi.submitResult(test.id, {
         status,
@@ -275,6 +308,7 @@ function TestRow({
       setVersion('');
       setElapsedSeconds('');
       setTimerStartedAt(null);
+      sessionStorage.removeItem(timerStorageKey);
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['tests', test.id, 'results'] });
       // Report queries (`['reports', ...]`) are keyed independently of `['runs', ...]` and were
@@ -528,7 +562,7 @@ function TestRow({
                     any other status through that same advancing path — a separate, faster route
                     than the plain Failed/Blocked/Retest buttons beside it, which still submit
                     without advancing for when a tester wants to add a comment/defect first. */}
-                <div className="relative flex">
+                <div className="relative flex" ref={quickAdvanceRef}>
                   <button
                     disabled={submitResult.isPending}
                     onClick={() => submitStatus('PASSED', true)}

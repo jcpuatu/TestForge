@@ -5,6 +5,7 @@ import swaggerUi from 'swagger-ui-express';
 import { openApiDocument } from './openapi/spec';
 import { env } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
+import { apiRateLimiter } from './middleware/rateLimit';
 import { authRouter } from './modules/auth/routes';
 import { usersRouter } from './modules/users/routes';
 import { projectsRouter } from './modules/projects/routes';
@@ -43,6 +44,7 @@ app.use(cors({ origin: env.clientOrigin, credentials: true }));
 // rejected by the body parser before ever reaching the import route.
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+app.use('/api/v1', apiRateLimiter);
 
 app.get('/api/v1/health', (_req, res) => {
   res.json({ status: 'ok' });

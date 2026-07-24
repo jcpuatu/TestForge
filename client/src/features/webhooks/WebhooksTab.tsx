@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import * as webhooksApi from '../../api/webhooks';
 import type { WebhookEventType } from '../../api/webhooks';
 import { Button } from '../../components/Button';
 import { Badge } from '../../components/Badge';
 import { Field, Input, Label, Select } from '../../components/Input';
+import { LoadMoreButton } from '../../components/LoadMoreButton';
 import { ApiError } from '../../lib/apiClient';
 
 const EVENTS: WebhookEventType[] = ['RUN_COMPLETED', 'RUN_CREATED', 'CASE_CREATED'];
@@ -14,11 +15,15 @@ function WebhookRow({ webhook }: { webhook: webhooksApi.Webhook }) {
   const queryClient = useQueryClient();
   const [showLog, setShowLog] = useState(false);
 
-  const deliveriesQuery = useQuery({
+  const deliveriesQuery = useInfiniteQuery({
     queryKey: ['webhooks', webhook.id, 'deliveries'],
-    queryFn: () => webhooksApi.listDeliveries(webhook.id),
+    queryFn: ({ pageParam }) => webhooksApi.listDeliveries(webhook.id, pageParam),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     enabled: showLog,
   });
+  const allDeliveries = deliveriesQuery.data?.pages.flatMap((p) => p.deliveries) ?? [];
+  const deliveriesLastPage = deliveriesQuery.data?.pages[deliveriesQuery.data.pages.length - 1];
 
   const testMutation = useMutation({
     mutationFn: () => webhooksApi.testWebhook(webhook.id),
@@ -55,7 +60,7 @@ function WebhookRow({ webhook }: { webhook: webhooksApi.Webhook }) {
 
       {showLog && (
         <div className="mt-3 space-y-1 border-t border-slate-100 dark:border-slate-800 pt-3">
-          {deliveriesQuery.data?.deliveries.map((d) => (
+          {allDeliveries.map((d) => (
             <div key={d.id} className="flex items-center gap-2 text-xs">
               <Badge className={d.success ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'}>
                 {d.success ? 'OK' : 'FAILED'}
@@ -64,7 +69,16 @@ function WebhookRow({ webhook }: { webhook: webhooksApi.Webhook }) {
               <span className="text-slate-400 dark:text-slate-500">{new Date(d.createdAt).toLocaleString()}</span>
             </div>
           ))}
-          {deliveriesQuery.data?.deliveries.length === 0 && <p className="text-xs text-slate-400 dark:text-slate-500">No deliveries yet.</p>}
+          {allDeliveries.length === 0 && !deliveriesQuery.isLoading && <p className="text-xs text-slate-400 dark:text-slate-500">No deliveries yet.</p>}
+          {deliveriesLastPage && (
+            <LoadMoreButton
+              loadedCount={allDeliveries.length}
+              total={deliveriesLastPage.total}
+              hasMore={deliveriesQuery.hasNextPage ?? false}
+              isFetching={deliveriesQuery.isFetchingNextPage}
+              onClick={() => deliveriesQuery.fetchNextPage()}
+            />
+          )}
         </div>
       )}
     </div>
@@ -105,8 +119,10 @@ export function WebhooksTab() {
     <div>
       <h1 className="mb-4 text-xl font-semibold text-slate-900 dark:text-slate-100">Webhooks</h1>
       <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-        Outbound webhooks POST a signed JSON payload (HMAC-SHA256 in the <code>X-TestForge-Signature</code> header) to an external URL
-        when project events occur — a stand-in integration point for Slack/Jira/CI notifications.
+        Outbound webhooks POST a signed JSON payload (HMAC-SHA256 in the <code>X-TestForge-Signature</code> header, computed over{' '}
+        <code>{'{timestamp}.{body}'}</code>) to an external URL when project events occur — a stand-in integration point for
+        Slack/Jira/CI notifications. The <code>X-TestForge-Timestamp</code> header carries the same timestamp; verify it's recent
+        (e.g. within 5 minutes) before trusting a delivery, to guard against a captured payload being replayed later.
       </p>
 
       <form onSubmit={handleSubmit} className="mb-6 flex items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">

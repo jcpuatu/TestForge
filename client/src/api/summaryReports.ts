@@ -14,6 +14,12 @@ export interface SummaryActivityDay {
   BLOCKED: number;
   RETEST: number;
   UNTESTED: number;
+  // Index signature so this is structurally assignable to ActivityOverTimeChart's generic
+  // `Array<Record<string, number | string>>` prop type — a named/closed interface (even one
+  // whose fields are all string|number) isn't automatically compatible with a Record<string, X>
+  // parameter without one, since TS can't otherwise rule out the interface being narrower than
+  // the index signature promises.
+  [key: string]: string | number;
 }
 
 export interface SummaryReportData {

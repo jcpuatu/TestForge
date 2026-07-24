@@ -73,11 +73,32 @@ usersRouter.get(
   }),
 );
 
+// True only when `target` is currently an active ADMIN and the incoming change would make them
+// stop being one (role change away from ADMIN, or deactivation) — used to guard both the role/
+// isActive PATCH and the deactivate-on-DELETE below against leaving the project with zero admins.
+function wouldLoseAdminStatus(target: { role: string; isActive: boolean }, patch: { role?: string; isActive?: boolean }): boolean {
+  if (target.role !== 'ADMIN' || !target.isActive) return false;
+  const staysAdmin = (patch.role ?? target.role) === 'ADMIN' && (patch.isActive ?? target.isActive);
+  return !staysAdmin;
+}
+
+async function assertOtherActiveAdminExists(excludingUserId: string) {
+  const otherActiveAdmins = await prisma.user.count({ where: { role: 'ADMIN', isActive: true, id: { not: excludingUserId } } });
+  if (otherActiveAdmins === 0) {
+    throw new BadRequestError('Cannot remove the last remaining admin — promote another user to ADMIN first');
+  }
+}
+
 usersRouter.patch(
   '/:id',
   requireRole('ADMIN'),
   asyncHandler(async (req, res) => {
     const body = updateUserSchema.parse(req.body);
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) throw new NotFoundError('User');
+    if (wouldLoseAdminStatus(target, body)) {
+      await assertOtherActiveAdminExists(target.id);
+    }
     const data: Record<string, unknown> = { ...body };
     delete data.password;
     if (body.password) {
@@ -92,6 +113,11 @@ usersRouter.delete(
   '/:id',
   requireRole('ADMIN'),
   asyncHandler(async (req, res) => {
+    const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!target) throw new NotFoundError('User');
+    if (wouldLoseAdminStatus(target, { isActive: false })) {
+      await assertOtherActiveAdminExists(target.id);
+    }
     await prisma.user.update({ where: { id: req.params.id }, data: { isActive: false } });
     res.status(204).send();
   }),

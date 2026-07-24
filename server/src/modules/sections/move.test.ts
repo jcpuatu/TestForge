@@ -24,8 +24,10 @@ beforeAll(async () => {
 
 describe('section move/reorder', () => {
   it('reorders siblings at the same level', async () => {
-    const a = await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth()).send({ name: 'A' });
-    const b = await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth()).send({ name: 'B' });
+    // A and B only need to exist as siblings for C to be reordered among — their own responses
+    // are never read, the resulting order is verified below via a separate list call.
+    await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth()).send({ name: 'A' });
+    await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth()).send({ name: 'B' });
     const c = await request(app).post(`/api/v1/suites/${suiteId}/sections`).set(auth()).send({ name: 'C' });
 
     // Move C to the front.

@@ -95,9 +95,11 @@ function parseSectionPath(raw: string): string[] {
 export function parseCasesCsv(csvText: string): ParsedCaseRow[] {
   // A leading UTF-8 BOM (common from Excel/Notepad saves, and some AI-generated files) isn't
   // stripped by String.trim() — left in place it silently glues onto the first header cell
-  // ("﻿section"), which then fails to match `col('section')` and dumps every row into a
-  // single fallback "Imported" section instead of respecting the file's actual hierarchy.
-  const rows = parseCsv(csvText.replace(/^﻿/, '').trim());
+  // (a U+FEFF-prefixed "section"), which then fails to match `col('section')` and dumps every
+  // row into a single fallback "Imported" section instead of respecting the file's actual
+  // hierarchy. The escape sequence below (not a raw BOM character) avoids an invisible,
+  // lint-flagged character sitting directly in the source.
+  const rows = parseCsv(csvText.replace(/^\uFEFF/, '').trim());
   if (rows.length === 0) return [];
 
   const header = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, ''));

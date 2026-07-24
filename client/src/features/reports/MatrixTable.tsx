@@ -2,6 +2,7 @@ import { PriorityBadge, StatusBadge } from '../../components/Badge';
 import { DownloadCsvButton } from '../../components/DownloadCsvButton';
 import { downloadTableAsCsv } from '../../lib/downloadCsv';
 import type { ResultStatus } from '../../api/runs';
+import type { Priority } from '../../api/types';
 
 interface MatrixRowData {
   caseId: string;
@@ -10,7 +11,7 @@ interface MatrixRowData {
   // component (resultsReports.ts's ComparisonCase) but never actually rendered here — a
   // report-design audit flagged this as dead payload; wiring it up answers a natural question
   // ("are these failures all CRITICAL?") the data already supports.
-  priority?: string;
+  priority?: Priority;
   cells: { runId: string; status: string | null; defects?: string[] }[];
 }
 

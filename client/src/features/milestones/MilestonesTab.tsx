@@ -15,22 +15,62 @@ function toDateInput(iso: string | null): string {
   return iso ? iso.slice(0, 10) : '';
 }
 
-type MilestoneStatus = 'Upcoming' | 'Open' | 'Completed';
+type MilestoneStatus = 'Upcoming' | 'Open' | 'Overdue' | 'Completed';
 
-// Derived, not stored — a milestone with no startDate (or one already in the past) is Open
-// immediately; a future startDate makes it Upcoming until that date arrives or "Start Milestone"
-// backdates it. Matches real TestRail's own Upcoming/Open split.
-function computeStatus(m: Milestone): MilestoneStatus {
+// Derived, not stored — Completed always wins regardless of dates; a future effective startDate
+// is Upcoming; a past effective dueDate that's neither Completed nor Upcoming is Overdue;
+// otherwise Open. Matches real TestRail's own Upcoming/Open split, extended with Overdue (a real
+// gap found during the full-application audit — a milestone whose due date had passed weeks ago
+// with no completion rendered identically to a fresh, on-track one). Uses *effective* dates (see
+// effectiveDates below), not just this milestone's own literal fields, so a child milestone that
+// inherits its schedule from a parent gets the same lifecycle treatment as one with its own dates.
+function computeStatus(m: Milestone, effective: { startDate: string | null; dueDate: string | null }): MilestoneStatus {
   if (m.isCompleted) return 'Completed';
-  if (m.startDate && new Date(m.startDate) > new Date()) return 'Upcoming';
+  if (effective.startDate && new Date(effective.startDate) > new Date()) return 'Upcoming';
+  if (effective.dueDate && new Date(effective.dueDate) < new Date()) return 'Overdue';
   return 'Open';
 }
 
 const STATUS_CLASSES: Record<MilestoneStatus, string> = {
   Upcoming: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400',
   Open: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300',
-  Completed: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400',
+  Overdue: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  // Deliberately a different shade from Upcoming in BOTH modes, not just light mode — the two
+  // previously converged on the identical dark:bg-slate-700/dark:text-slate-400 pair, so
+  // "hasn't started" and "done" carried zero distinguishing color in dark mode (only the label
+  // text and the separate strikethrough on the milestone's name differentiated them).
+  Completed: 'bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-500',
 };
+
+// Walks up the parentId chain for whichever of startDate/dueDate this milestone doesn't have its
+// own value for — same "inherit from parent when absent" convention already used for
+// Plan-from-Milestone and Run-from-Plan/Milestone, extended one level further up the hierarchy
+// (a real, previously-flagged gap: a child milestone with no own dates showed nothing at all,
+// unlike every other level of this app's date-inheritance chain).
+function effectiveDates(
+  m: Milestone,
+  byId: Map<string, Milestone>,
+): { startDate: string | null; dueDate: string | null; startInherited: boolean; dueInherited: boolean } {
+  let startDate = m.startDate;
+  let dueDate = m.dueDate;
+  let startInherited = false;
+  let dueInherited = false;
+  let parentId = m.parentId;
+  while ((!startDate || !dueDate) && parentId) {
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    if (!startDate && parent.startDate) {
+      startDate = parent.startDate;
+      startInherited = true;
+    }
+    if (!dueDate && parent.dueDate) {
+      dueDate = parent.dueDate;
+      dueInherited = true;
+    }
+    parentId = parent.parentId;
+  }
+  return { startDate, dueDate, startInherited, dueInherited };
+}
 
 function buildTree(milestones: Milestone[]): Array<Milestone & { depth: number }> {
   const byParent = new Map<string | null, Milestone[]>();
@@ -174,6 +214,7 @@ export function MilestonesTab() {
   }
 
   const tree = buildTree(milestones);
+  const byId = new Map(milestones.map((m) => [m.id, m]));
 
   return (
     <div>
@@ -194,9 +235,9 @@ export function MilestonesTab() {
               <Label htmlFor="milestone-parent">Parent (optional)</Label>
               <Select id="milestone-parent" value={parentId} onChange={(e) => setParentId(e.target.value)}>
                 <option value="">(none — top level)</option>
-                {milestones.map((m) => (
+                {tree.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
+                    {'—'.repeat(m.depth)} {m.name}
                   </option>
                 ))}
               </Select>
@@ -229,7 +270,8 @@ export function MilestonesTab() {
 
       <div className="space-y-2">
         {tree.map((m) => {
-          const status = computeStatus(m);
+          const effective = effectiveDates(m, byId);
+          const status = computeStatus(m, effective);
           return (
             <div
               key={m.id}
@@ -246,8 +288,19 @@ export function MilestonesTab() {
                       <Badge className={STATUS_CLASSES[status]}>{status}</Badge>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {m.startDate && <>Starts {new Date(m.startDate).toLocaleDateString()} </>}
-                      {m.dueDate && <>· Due {new Date(m.dueDate).toLocaleDateString()}</>}
+                      {effective.startDate && (
+                        <>
+                          Starts {new Date(effective.startDate).toLocaleDateString()}
+                          {effective.startInherited && ' (inherited)'}{' '}
+                        </>
+                      )}
+                      {effective.dueDate && (
+                        <>
+                          · Due {new Date(effective.dueDate).toLocaleDateString()}
+                          {effective.dueInherited && ' (inherited)'}
+                        </>
+                      )}
+                      {!effective.startDate && !effective.dueDate && 'No dates set'}
                     </p>
                     {m.references && <p className="print-detail-only text-xs text-slate-400 dark:text-slate-500">Refs: {m.references}</p>}
                   </div>

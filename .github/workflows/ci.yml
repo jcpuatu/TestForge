@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Lint, typecheck, build, and test
+    runs-on: ubuntu-latest
+    # Real Postgres, not SQLite -- src/test/setup.ts scopes each test file to its own schema
+    # (namespace) within this one service database via a `?schema=` query param, the Postgres-
+    # native analog of the old "one SQLite file per test file" isolation. The healthcheck makes
+    # the runner wait for Postgres to actually accept connections before any step tries to use it.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: testforge
+          POSTGRES_PASSWORD: testforge
+          POSTGRES_DB: testforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://testforge:testforge@localhost:5432/testforge
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Prisma Client's generated types are required for both workspaces' typechecks below —
+      # without this, @prisma/client resolves to its un-generated stub and every model-specific
+      # query (prisma.testCase.findMany, etc.) fails to typecheck.
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w server
+
+      - name: Lint
+        run: npm run lint
+
+      # Each "build" script is `tsc` (server) / `tsc -b && vite build` (client) — typecheck and a
+      # real production build in one step, matching how this project is actually shipped.
+      - name: Build server (typecheck)
+        run: npm run build -w server
+
+      - name: Build client (typecheck + bundle)
+        run: npm run build -w client
+
+      # No other .env / secrets needed here — the job-level DATABASE_URL above points at the
+      # postgres service, src/test/setup.ts scopes each test file to its own schema within it,
+      # and config/env.ts's dev-only secret fallbacks apply outside NODE_ENV=production, which
+      # Jest never sets.
+      - name: Run server test suite
+        run: npm test

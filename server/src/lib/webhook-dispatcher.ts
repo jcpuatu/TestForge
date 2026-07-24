@@ -4,13 +4,34 @@ import { assertPublicHttpUrl } from './urlSafety';
 
 export type WebhookEvent = 'RUN_COMPLETED' | 'RUN_CREATED' | 'CASE_CREATED';
 
-function sign(secret: string, body: string): string {
-  return crypto.createHmac('sha256', secret).update(body).digest('hex');
+function sign(secret: string, timestamp: string, body: string): string {
+  // The timestamp is part of the signed content, not just an extra header — a signature computed
+  // over the body alone never expires, so anyone who captures one legitimate (body, signature)
+  // pair could replay it to the receiver indefinitely. Binding the timestamp into the HMAC input
+  // (Stripe/GitHub-style) means a receiver that also checks "is this timestamp recent" can reject
+  // a replayed delivery outright, since replaying an old timestamp+signature pair verifies fine
+  // cryptographically but fails the freshness check, and forging a fresh one requires the secret.
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+}
+
+// fetch (undici)'s own thrown error is always the generic "fetch failed" -- the actual reason
+// (DNS lookup failure vs. connection refused vs. anything else) lives one level down in
+// err.cause, which an earlier version of this code discarded by logging err.message alone. A DNS
+// failure and a connection refusal both used to log the identical "fetch failed" with zero way to
+// tell them apart from the delivery log. Extracted as a standalone function so the formatting
+// logic can be tested directly against synthetic errors, rather than depending on a real network/
+// DNS failure's timing inside a test.
+export function formatDeliveryError(err: unknown): string {
+  if (!(err instanceof Error)) return 'Request failed';
+  const cause = err.cause;
+  const causeMessage = cause instanceof Error ? cause.message : undefined;
+  return causeMessage ? `${err.message}: ${causeMessage}` : err.message;
 }
 
 async function deliver(webhook: { id: string; url: string; secret: string }, payload: unknown) {
   const body = JSON.stringify(payload);
-  const signature = sign(webhook.secret, body);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signature = sign(webhook.secret, timestamp, body);
 
   let statusCode: number | null = null;
   let success = false;
@@ -23,7 +44,11 @@ async function deliver(webhook: { id: string; url: string; secret: string }, pay
     await assertPublicHttpUrl(webhook.url);
     const res = await fetch(webhook.url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-TestForge-Signature': signature },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-TestForge-Signature': signature,
+        'X-TestForge-Timestamp': timestamp,
+      },
       body,
       signal: AbortSignal.timeout(5000),
     });
@@ -31,7 +56,7 @@ async function deliver(webhook: { id: string; url: string; secret: string }, pay
     success = res.ok;
     responseBody = (await res.text()).slice(0, 2000);
   } catch (err) {
-    responseBody = err instanceof Error ? err.message : 'Request failed';
+    responseBody = formatDeliveryError(err);
   }
 
   await prisma.webhookDelivery.create({

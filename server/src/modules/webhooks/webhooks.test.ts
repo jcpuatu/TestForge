@@ -1,4 +1,5 @@
 import http from 'http';
+import crypto from 'crypto';
 import request from 'supertest';
 import { app } from '../../app';
 import { prisma } from '../../config/prisma-client';
@@ -22,6 +23,8 @@ function auth() {
 let receiver: http.Server;
 let receiverUrl: string;
 let receivedPayloads: unknown[] = [];
+let receivedHeaders: http.IncomingHttpHeaders[] = [];
+let receivedRawBodies: string[] = [];
 
 beforeAll(async () => {
   const admin = await prisma.user.create({
@@ -43,6 +46,8 @@ beforeAll(async () => {
       req.on('data', (chunk) => (body += chunk));
       req.on('end', () => {
         receivedPayloads.push(JSON.parse(body));
+        receivedHeaders.push(req.headers);
+        receivedRawBodies.push(body);
         res.writeHead(200);
         res.end('ok');
       });
@@ -151,6 +156,50 @@ describe('webhooks', () => {
     expect(receivedPayloads).toHaveLength(1);
     expect(receivedPayloads[0]).toMatchObject({ event: 'CASE_CREATED', count: 3 });
   });
+
+  // Regression test: signatures were originally computed over the raw body alone, so a captured
+  // (body, signature) pair from one legitimate delivery could be replayed to the receiver
+  // indefinitely -- it would verify forever. Binding the timestamp into the signed content (and
+  // sending it as its own header) lets a receiver reject a replayed pair on staleness even though
+  // the signature still checks out cryptographically.
+  // Uses its own dedicated project/suite (not the shared projectId/suiteId) so this is the only
+  // RUN_COMPLETED webhook that fires -- the shared project already has one registered by the
+  // first test in this file, and dispatchWebhookEvent fans out to every matching webhook, so
+  // reusing it here would double the deliveries this test observes for reasons unrelated to
+  // what's actually under test (see the CASE_CREATED tests below for the same precedent).
+  it('signs deliveries with a timestamp-bound HMAC, sent as two independently verifiable headers', async () => {
+    const project = await request(app).post('/api/v1/projects').set(auth()).send({ name: `Signature Test ${Date.now()}` });
+    const suite = await request(app).post(`/api/v1/projects/${project.body.project.id}/suites`).set(auth()).send({ name: 'Suite' });
+    const section = await request(app).post(`/api/v1/suites/${suite.body.suite.id}/sections`).set(auth()).send({ name: 'Section' });
+    await request(app).post(`/api/v1/sections/${section.body.section.id}/cases`).set(auth()).send({ title: 'Case' });
+    const webhook = await request(app)
+      .post(`/api/v1/projects/${project.body.project.id}/webhooks`)
+      .set(auth())
+      .send({ url: receiverUrl, event: 'RUN_COMPLETED' });
+    const secret = webhook.body.webhook.secret as string;
+
+    receivedPayloads = [];
+    receivedHeaders = [];
+    receivedRawBodies = [];
+    const run = await request(app).post(`/api/v1/projects/${project.body.project.id}/runs`).set(auth()).send({ name: 'Sig Run', suiteId: suite.body.suite.id });
+    expect(run.status).toBe(201);
+    await request(app).post(`/api/v1/runs/${run.body.run.id}/close`).set(auth());
+
+    expect(receivedHeaders).toHaveLength(1);
+    const timestamp = receivedHeaders[0]['x-testforge-timestamp'] as string;
+    const signature = receivedHeaders[0]['x-testforge-signature'] as string;
+    expect(timestamp).toMatch(/^\d+$/);
+    expect(signature).toMatch(/^[0-9a-f]{64}$/);
+
+    const expectedSignature = crypto.createHmac('sha256', secret).update(`${timestamp}.${receivedRawBodies[0]}`).digest('hex');
+    expect(signature).toBe(expectedSignature);
+
+    // A signature computed the OLD way (body only, no timestamp) must NOT also match -- otherwise
+    // the timestamp would just be a decorative extra header rather than actually participating in
+    // what's signed, and replaying an old (body, signature) pair would still verify.
+    const bodyOnlySignature = crypto.createHmac('sha256', secret).update(receivedRawBodies[0]).digest('hex');
+    expect(signature).not.toBe(bodyOnlySignature);
+  });
 });
 
 describe('POST /api/v1/webhooks/:id/test', () => {
@@ -192,5 +241,30 @@ describe('POST /api/v1/webhooks/:id/test', () => {
     } finally {
       receiverB.close();
     }
+  });
+});
+
+// Regression test: the deliveries list had a hard `take: 25` with no `skip` -- once a webhook
+// fired more than 25 times, anything before the most recent 25 was permanently unreachable
+// through this endpoint even though every delivery is still stored.
+describe('GET /api/v1/webhooks/:id/deliveries pagination', () => {
+  it('paginates via real skip/take instead of a fixed cap', async () => {
+    const webhook = await request(app)
+      .post(`/api/v1/projects/${projectId}/webhooks`)
+      .set(auth())
+      .send({ url: receiverUrl, event: 'RUN_CREATED' });
+
+    for (let i = 0; i < 3; i++) {
+      await request(app).post(`/api/v1/webhooks/${webhook.body.webhook.id}/test`).set(auth());
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const page1 = await request(app).get(`/api/v1/webhooks/${webhook.body.webhook.id}/deliveries?page=1&pageSize=2`).set(auth());
+    expect(page1.body.deliveries).toHaveLength(2);
+    expect(page1.body).toMatchObject({ total: 3, page: 1, pageSize: 2, hasMore: true });
+
+    const page2 = await request(app).get(`/api/v1/webhooks/${webhook.body.webhook.id}/deliveries?page=2&pageSize=2`).set(auth());
+    expect(page2.body.deliveries).toHaveLength(1);
+    expect(page2.body.hasMore).toBe(false);
   });
 });

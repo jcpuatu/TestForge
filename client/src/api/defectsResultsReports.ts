@@ -1,4 +1,5 @@
 import { apiFetch } from '../lib/apiClient';
+import type { Priority } from './types';
 
 export interface ReportRun {
   id: string;
@@ -44,7 +45,7 @@ export function getDefectsSummary(projectId: string, filter: RunScopedFilter) {
 export interface DefectsMatrixCase {
   caseId: string;
   title: string;
-  priority: string;
+  priority: Priority;
   cells: { runId: string; status: string | null; defects: string[] }[];
 }
 
@@ -65,7 +66,7 @@ export function getDefectsSummaryForReferences(projectId: string, filter: RunSco
 export interface ComparisonCase {
   caseId: string;
   title: string;
-  priority: string;
+  priority: Priority;
   cells: { runId: string; status: string | null }[];
 }
 
