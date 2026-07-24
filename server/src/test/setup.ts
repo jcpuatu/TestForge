@@ -1,12 +1,22 @@
 import { execSync } from 'child_process';
 import path from 'path';
-import fs from 'fs';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
 
-// Runs before the test file (and its imports of app.ts/prisma-client.ts) are evaluated,
-// so the Prisma client singleton binds to this isolated per-file test database.
-const TEST_DB_PATH = path.resolve(__dirname, `../../prisma/test-${crypto.randomBytes(4).toString('hex')}.db`);
-process.env.DATABASE_URL = `file:${TEST_DB_PATH}`;
+dotenv.config();
+
+// Runs before the test file (and its imports of app.ts/prisma-client.ts) are evaluated, so the
+// Prisma client singleton binds to this isolated per-file test schema.
+//
+// Postgres has no per-file-database equivalent to SQLite's old "one .db file per test file"
+// isolation, but it does have schemas (namespaces) within one physical database -- the `schema`
+// query param on a postgresql:// URL scopes every Prisma operation (including `db push`, which
+// auto-creates the schema if missing) to just that namespace. Same isolation guarantee as before
+// (each test file gets a completely empty, independent set of tables), just Postgres-native.
+const SCHEMA_NAME = `test_${crypto.randomBytes(4).toString('hex')}`;
+const baseUrl = new URL(process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/testforge');
+baseUrl.searchParams.set('schema', SCHEMA_NAME);
+process.env.DATABASE_URL = baseUrl.toString();
 
 execSync('npx prisma db push --skip-generate --accept-data-loss', {
   cwd: path.resolve(__dirname, '../..'),
@@ -16,6 +26,8 @@ execSync('npx prisma db push --skip-generate --accept-data-loss', {
 
 afterAll(async () => {
   const { prisma } = await import('../config/prisma-client');
+  // No file to unlink anymore -- drop the schema itself so it doesn't linger in the shared
+  // Postgres database after the test file finishes.
+  await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${SCHEMA_NAME}" CASCADE`);
   await prisma.$disconnect();
-  if (fs.existsSync(TEST_DB_PATH)) fs.unlinkSync(TEST_DB_PATH);
 });

@@ -3,12 +3,18 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// SQLite has no native enum type, so "enum-like" fields below are String,
-// validated at the API boundary (Zod) and typed there as literal unions.
+// "Enum-like" fields below are still plain String, not native Postgres enums, even though
+// Postgres supports them -- this schema was originally SQLite-only (no native enum support
+// there), and every enum-like field was already validated at the API boundary (Zod) and typed
+// there as literal unions in TS. Migrating to native Postgres enums is a real, separate future
+// improvement (see root CLAUDE.md's Roadmap) but is deliberately NOT bundled into this provider
+// swap -- it would mean an actual column-type migration with data backfill for every one of
+// these columns, versus this migration's actual scope (same String-typed columns, new database
+// engine underneath).
 // Role:         ADMIN | LEAD | TESTER | VIEWER
 // Priority:     LOW | MEDIUM | HIGH | CRITICAL
 // CaseType:     FUNCTIONAL | SMOKE | REGRESSION | PERFORMANCE | SECURITY | USABILITY | ACCEPTANCE | OTHER
